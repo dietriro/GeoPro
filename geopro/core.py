@@ -16,6 +16,7 @@ class FileTypeConfig:
     CSV = FileType("CSV Files", [".csv"])
     JSON = FileType("JSON Files", [".json"])
     GEOJSON = FileType("GeoJSON Files", [".geojson"])
+    KML = FileType("KML Files", [".kml"])
 
     @classmethod
     def dialog_filter(cls, *types: FileType) -> str:
