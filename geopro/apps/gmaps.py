@@ -84,11 +84,6 @@ class GMapsGeoProApp(BaseGeoProApp):
         self.api_entry.setEnabled(self.scraping_method == SupportedMethods.GMAPS_API)
         log.debug(f"Scraping method changed: {self.scraping_method}")
 
-    def after_source_selected(self):
-        super().after_source_selected()
-
-        self.update_table()
-
 
     # ------------------------------------------------------------------
     # CSV relevance counting
@@ -96,10 +91,10 @@ class GMapsGeoProApp(BaseGeoProApp):
     def update_table(self):
         # 1. update number of relevant rows
         for path in self.source_files:
-            relevant = self.count_relevant_rows(path)
+            relevant = self.count_relevant_places(path)
             self.output_table.item(self.file_row_map[path], 1).setText(str(relevant))
 
-    def count_relevant_rows(self, csv_path):
+    def count_relevant_places(self, csv_path):
         """Count non-empty rows where URL column contains Google Maps."""
         try:
             with open(csv_path, newline="", encoding="utf-8") as f:

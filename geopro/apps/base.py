@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor
+from pathlib import Path
 
 from geopro.core import FileTypeConfig, RunStates
 from geopro.logging import setup_logging
@@ -195,31 +196,39 @@ class BaseGeoProApp(QWidget):
         self.source_files = sorted(files)
         self.source_entry.setText(", ".join(files))
 
-        self.populate_table(self.source_files)
         self.after_source_selected()
 
     def select_source_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
         if not folder:
+            log.error("Folder is not valid. Terminating.")
             return
+
+        log.debug(f"Selected folder: {folder}")
+        log.debug(f"Found {len(os.listdir(folder))} files.")
 
         self.source_type = "folder"
         self.source_entry.setText(folder)
 
-        self.source_files = sorted(
-            os.path.join(folder, f)
-            for f in os.listdir(folder)
-            if any(f.lower().endswith(ext) for ext in self.INPUT_FILE_TYPES[0].extensions)
-        )
+        source_files = list()
+        valid_input_extensions = [ext for f_type in self.INPUT_FILE_TYPES for ext in f_type.extensions]
+        for file_i in os.listdir(folder):
+            if Path(file_i).suffix.lower() in valid_input_extensions:
+                source_files.append(os.path.join(folder, file_i))
+        self.source_files = sorted(source_files)
 
-        self.populate_table(self.source_files)
+        log.debug(f"Identified {len(self.source_files)} relevant files.")
+
         self.after_source_selected()
 
     def after_source_selected(self):
+        self.populate_table(self.source_files)
         self.target_entry.clear()
         self.update_target_buttons()
         self.update_execute_button()
         self.set_running_state(RunStates.INIT)
+        self.update_table()
+
 
     # ------------------------------------------------------------------
     # Target selection
@@ -276,6 +285,9 @@ class BaseGeoProApp(QWidget):
             layout.setAlignment(Qt.AlignCenter)
             layout.setContentsMargins(0, 0, 0, 0)
             self.output_table.setCellWidget(row, len(self.TABLE_HEADERS) - 1, container)
+
+    def update_table(self):
+        pass
 
     def set_processing_result(self, file_path, successful_rows, skipped_rows, finished=None
     ):
