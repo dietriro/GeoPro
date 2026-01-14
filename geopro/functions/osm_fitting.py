@@ -27,6 +27,12 @@ OVERPASS_ENDPOINTS = [
 ]
 
 
+class MatchingMethods:
+    ALL = "all"
+    BEST = "best"
+    THRESHOLD = "threshold"
+
+
 def extract_words(place_name: str) -> list:
     """
     Extract words from a place name while preserving internal apostrophes.
@@ -99,11 +105,6 @@ def search_places_around(
 
     # Split name into words, remove short/noisy tokens
     words = extract_words(place_name)
-    # words = [
-    #     re.escape(w)
-    #     for w in place_name.split()
-    #     if len(w) > 2
-    # ]
 
     if not words:
         return []
@@ -120,15 +121,7 @@ def search_places_around(
     out;
     """
 
-    print(query)
-
-    # response = requests.post(
-    #     OVERPASS_URL,
-    #     data=query,
-    #     timeout=timeout,
-    #     headers={"Accept": "application/json"},
-    # )
-    # response.raise_for_status()
+    # print(query)
 
     data = overpass_request(query, timeout=timeout)
 
@@ -190,7 +183,7 @@ def find_best_place_match(
     max_distance: float = 5000.0,
 ):
     """
-    Determine the most likely OSM place match.
+    Rank OSM places by likelihood of matching the target place.
 
     Parameters:
         places (list[dict]): output from search_places_around()
@@ -200,60 +193,64 @@ def find_best_place_match(
         max_distance (float): maximum acceptable distance in meters
 
     Returns:
-        dict | None: best matching place or None
+        list[dict]: ranked list of matched places (best first)
     """
 
     if not places:
-        return None
+        return []
 
-    best_score = 0.0
-    best_place = None
+    ranked_matches = []
 
     for place in places:
-        if not place.get("lat") or not place.get("lon"):
+        lat = place.get("lat")
+        lon = place.get("lon")
+
+        if lat is None or lon is None:
             continue
 
         distance = haversine_distance(
             target_lat, target_lon,
-            place["lat"], place["lon"]
+            lat, lon
         )
 
         if distance > max_distance:
             continue
 
         # Normalize distance score (closer = better)
-        distance_score = 1.0 - (distance / max_distance)
+        distance_score = max(0.0, 1.0 - (distance / max_distance))
+
+        log.debug(f"Distance score: {distance_score}")
 
         name_score = name_overlap_score(
             target_name,
             place.get("name", "")
         )
 
+        log.debug(f"Name score: {name_score}")
+
         final_score = (
             name_score * NAME_WEIGHT
             + distance_score * DIST_WEIGHT
         )
 
-        if final_score > best_score:
-            best_score = final_score
-            best_place = {
-                **place,
-                "distance_m": round(distance, 2),
-                "name_score": round(name_score, 3),
-                "final_score": round(final_score, 3),
-            }
+        ranked_matches.append({
+            **place,
+            "distance_m": round(distance, 2),
+            "distance_score": round(distance_score, 3),
+            "name_score": round(name_score, 3),
+            "final_score": round(final_score, 3),
+        })
 
-    return best_place
+    # Sort by total score (best first)
+    ranked_matches.sort(
+        key=lambda p: p["final_score"],
+        reverse=True,
+    )
+
+    return ranked_matches
+
 
 def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc):
-    # kml_file.write(
-    #     "  <Placemark>\n"
-    #     f"    <name>{place_name}</name>\n"
-    #     "    <Point>\n"
-    #     f"      <coordinates>{osm_lon},{osm_lat},0</coordinates>\n"
-    #     "    </Point>\n"
-    #     "  </Placemark>\n"
-    # )
     kml_obj.newpoint(
         name=place_name,
         description=place_desc,
@@ -261,11 +258,14 @@ def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc):
     )
 
 def process_places_to_kml(
-    input_file_path: str,
-    output_file_path: str,
-    overwrite_output: bool,
-    update_function: Callable[[str, int, int, float], None],
-    include_skipped: bool = True
+        input_file_path: str,
+        output_file_path: str,
+        overwrite_output: bool,
+        update_function: Callable[[str, int, int, float], None],
+        user_match_selection,
+        match_method: str = MatchingMethods.BEST,
+        threshold: float = None,
+        include_skipped: bool = True
 ):
     successful = 0
     skipped = 0
@@ -281,6 +281,9 @@ def process_places_to_kml(
     if os.path.exists(output_file_path) and not overwrite_output:
         log.info(f"Output file exists and overwrite is disabled: {output_file_path}")
         return
+
+    if not match_method in [MatchingMethods.BEST, MatchingMethods.THRESHOLD, MatchingMethods.ALL]:
+        log.error(f"Matching method not valid: {match_method}")
 
     # ---------------------------------------------------------
     # Load input file
@@ -302,16 +305,6 @@ def process_places_to_kml(
     # ---------------------------------------------------------
     # Prepare KML output
     # ---------------------------------------------------------
-    # try:
-    #     kml_file = open(output_file_path, "w", encoding="utf-8")
-    #     kml_file.write(
-    #         '<?xml version="1.0" encoding="UTF-8"?>\n'
-    #         '<kml xmlns="http://www.opengis.net/kml/2.2">\n'
-    #         "<Document>\n"
-    #     )
-    # except Exception as e:
-    #     log.error(f"Failed to open output KML file: {e}")
-    #     return
     kml_obj = simplekml.Kml()
 
     # ---------------------------------------------------------
@@ -346,18 +339,6 @@ def process_places_to_kml(
 
             log.debug(f"Candidates: {candidates}")
 
-            # if not candidates:
-            #     log.debug("No candidates found in nodes, trying ways now.")
-            #     candidates = search_places_around(
-            #         lat=lat,
-            #         lon=lon,
-            #         radius=RADIUS,
-            #         place_name=place_name,
-            #         place_type="way"
-            #     )
-            #
-            #     log.debug(f"Candidates (ways): {candidates}")
-
             if not candidates:
                 skipped += 1
                 log.warning(f"No OSM candidates found for '{place_name}'")
@@ -365,20 +346,51 @@ def process_places_to_kml(
                 continue
 
             # ---- correct call & return handling ----
-            best_match = find_best_place_match(
+            ranked_matches = find_best_place_match(
                 places=candidates,
                 target_lat=lat,
                 target_lon=lon,
                 target_name=place_name,
             )
 
-            if not best_match:
+            if not ranked_matches:
                 skipped += 1
                 log.warning(f"No suitable OSM match for '{place_name}'")
                 write_to_kml(kml_obj, place_name, lat, lon, place_desc)
                 continue
 
             successful += 1
+
+            if match_method == MatchingMethods.BEST:
+                best_match = ranked_matches[0]
+            elif match_method == MatchingMethods.THRESHOLD:
+                if threshold is None:
+                    skipped += 1
+                    log.warning(f"No suitable OSM match for '{place_name}'")
+                    write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                    continue
+
+                score = ranked_matches[0].get("final_score", 0.0)
+                if score >= threshold:
+                    best_match = ranked_matches[0]
+                    log.debug(f"Best match score is above threshold: {score} >= {threshold}. Using best match.")
+                else:
+                    log.debug(f"Best match score is below threshold: {score} < {threshold}. Requiring user input.")
+                    selection = user_match_selection(lat, lon, ranked_matches)
+                    best_match = ranked_matches[selection]
+
+                    log.info(f"User selection: {selection}")
+
+            elif match_method == MatchingMethods.ALL:
+                # test waiting for button input
+                selection = user_match_selection(lat, lon, ranked_matches)
+                best_match = ranked_matches[selection]
+
+                log.info(f"User selection: {selection}")
+            else:
+                log.error(f"Match method not supported: {match_method}")
+                continue
+
             score = best_match.get("final_score", 0.0)
             scores.append(score)
 
@@ -387,7 +399,6 @@ def process_places_to_kml(
             osm_name = best_match.get("name", place_name)
 
             write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc)
-
 
         except Exception as e:
             skipped += 1
@@ -408,8 +419,7 @@ def process_places_to_kml(
     # Finalize KML
     # ---------------------------------------------------------
     try:
-        kml_file.write("</Document>\n</kml>\n")
-        kml_file.close()
+        kml_obj.save(output_file_path)
     except Exception as e:
         log.error(f"Failed to finalize KML file: {e}")
 

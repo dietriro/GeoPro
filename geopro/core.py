@@ -1,5 +1,16 @@
+import os
+
 from dataclasses import dataclass
 from typing import List
+
+import geopro
+
+package_path = os.path.dirname(os.path.dirname(geopro.__file__))
+
+class Animations:
+    COMPLETED = os.path.join(package_path, "resources/completed.gif")
+    MATCHING = os.path.join(package_path, "resources/matching.gif")
+    GEOLOCATION = os.path.join(package_path, "resources/geolocation.gif")
 
 
 @dataclass(frozen=True)
@@ -27,3 +38,4 @@ class RunStates:
     INIT = "initialized"
     RUNNING = "running"
     FINISHED = "finished"
+    USER_INPUT = "user_input"

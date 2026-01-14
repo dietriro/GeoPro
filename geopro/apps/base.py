@@ -1,14 +1,17 @@
 import os
+import threading
+
+import requests
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit,
     QFileDialog, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QCheckBox, QHeaderView, QApplication
 )
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
+from PyQt5.QtGui import QColor, QMovie
 from pathlib import Path
 
-from geopro.core import FileTypeConfig, RunStates
+from geopro.core import FileTypeConfig, RunStates, Animations, package_path
 from geopro.logging import setup_logging
 
 log = setup_logging()
@@ -49,13 +52,10 @@ class BaseGeoProApp(QWidget):
         self.run_headless = False
         self.run_state = None
         self.file_row_map = {}
+        self.thread_execution = None
 
-        self.layout = QVBoxLayout()
         self._init_window()
-
-
-
-
+        self.init_ui_base()
 
 
     # ------------------------------------------------------------------
@@ -73,6 +73,21 @@ class BaseGeoProApp(QWidget):
         self.init_ui_progress_table()
         self.init_ui_execution_controls()
 
+    def init_ui_base(self):
+        self.main_layout = QHBoxLayout()
+        self.setLayout(self.main_layout)
+
+        # Left: existing UI
+        self.left_panel = QWidget()
+        self.left_layout = QVBoxLayout(self.left_panel)
+
+        # Right: map + table
+        self.right_panel = QWidget()
+        self.right_layout = QVBoxLayout(self.right_panel)
+
+        self.main_layout.addWidget(self.left_panel, stretch=3)
+        self.main_layout.addWidget(self.right_panel, stretch=2)
+
     def init_ui_source_selection(self):
         self.source_label = QLabel("Select Source:")
 
@@ -89,10 +104,10 @@ class BaseGeoProApp(QWidget):
         btns.addWidget(self.browse_files_btn)
         btns.addWidget(self.browse_folder_btn)
 
-        self.layout.addWidget(self.source_label)
-        self.layout.addLayout(btns)
-        self.layout.addWidget(self.source_entry)
-        self.layout.addSpacing(20)
+        self.left_layout.addWidget(self.source_label)
+        self.left_layout.addLayout(btns)
+        self.left_layout.addWidget(self.source_entry)
+        self.left_layout.addSpacing(20)
 
     def init_ui_target_selection(self):
         self.target_label = QLabel("Select Target:")
@@ -110,11 +125,11 @@ class BaseGeoProApp(QWidget):
         btns.addWidget(self.browse_target_file_btn)
         btns.addWidget(self.browse_target_folder_btn)
 
-        self.layout.addWidget(self.target_label)
-        self.layout.addLayout(btns)
-        self.layout.addWidget(self.target_entry)
+        self.left_layout.addWidget(self.target_label)
+        self.left_layout.addLayout(btns)
+        self.left_layout.addWidget(self.target_entry)
 
-        self.layout.addSpacing(20)
+        self.left_layout.addSpacing(20)
 
     def init_ui_options(self):
         self.options_label = QLabel("Options:")
@@ -134,9 +149,9 @@ class BaseGeoProApp(QWidget):
         layout.addWidget(self.overwrite_checkbox)
         layout.addWidget(self.headless_checkbox)
 
-        self.layout.addWidget(self.options_label)
-        self.layout.addLayout(layout)
-        self.layout.addSpacing(20)
+        self.left_layout.addWidget(self.options_label)
+        self.left_layout.addLayout(layout)
+        self.left_layout.addSpacing(20)
 
     def init_ui_progress_table(self):
         self.output_table = QTableWidget(0, len(self.TABLE_HEADERS))
@@ -150,33 +165,61 @@ class BaseGeoProApp(QWidget):
         for i in range(1, len(self.TABLE_HEADERS)):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
 
-        self.layout.addWidget(self.output_table)
+        self.left_layout.addWidget(self.output_table)
 
     def init_ui_execution_controls(self):
+        # Create a QLabel to display the GIF
+        self.gif_label = QLabel()
+        self.gif_label.setFixedSize(32, 32)
+        self.gif_label.setAlignment(Qt.AlignCenter)
+
+        # Load the GIF into QMovie
+        package_path = os.path.dirname(requests.__file__)
+        self.gif_status = QMovie(Animations.COMPLETED)
+        self.gif_status.setScaledSize(QSize(32, 32))
+        self.gif_status.jumpToFrame(0)
+        self.gif_status.finished.connect(self.on_gif_finished)
+        self.gif_label.setMovie(self.gif_status)
+
         self.running_label = QLabel("")
         self.running_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.running_label.setStyleSheet("background-color: #FFFFFF;padding-left: 20px;padding-right: 20px;")
 
         self.execute_button = QPushButton("Run")
         self.execute_button.setEnabled(False)
-        self.execute_button.clicked.connect(self.execute)
+        self.execute_button.clicked.connect(self.on_button_execute)
         # self.execute_button.setFixedWidth(250)
 
-        self.running_timer = QTimer()
-        self.running_timer.setInterval(500)
-        self.running_timer.timeout.connect(self._animate_running)
+        # self.running_timer = QTimer()
+        # self.running_timer.setInterval(500)
+        # self.running_timer.timeout.connect(self._animate_running)
 
         bottom = QHBoxLayout()
+        bottom.addWidget(self.gif_label)
         bottom.addWidget(self.running_label)
         bottom.addStretch()
         bottom.addWidget(self.execute_button)
 
-        self.layout.addLayout(bottom)
+        bottom.setSpacing(0)
+        bottom.setContentsMargins(0, 0, 0, 0)
+
+        self.left_layout.addLayout(bottom)
 
     def init_finish(self):
         self.set_running_state(RunStates.INIT)
         self.update_target_buttons()
 
-        self.setLayout(self.layout)
+    def on_button_execute(self):
+        self.execute_button.setEnabled(False)
+
+        self.thread_execution = threading.Thread(target=self.execute)
+        self.thread_execution.start()
+
+    def on_gif_finished(self):
+        log.debug(f"GIF finished: {self.run_state}")
+        if self.run_state == RunStates.FINISHED:
+            log.debug("GIF stopped")
+            self.gif_status.stop()
 
     # ------------------------------------------------------------------
     # Source selection
@@ -186,8 +229,8 @@ class BaseGeoProApp(QWidget):
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Select Files",
-            "",
-            FileTypeConfig.dialog_filter(*self.INPUT_FILE_TYPES)
+            directory=package_path,
+            filter=FileTypeConfig.dialog_filter(*self.INPUT_FILE_TYPES)
         )
         if not files:
             return
@@ -199,7 +242,7 @@ class BaseGeoProApp(QWidget):
         self.after_source_selected()
 
     def select_source_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder", directory=package_path)
         if not folder:
             log.error("Folder is not valid. Terminating.")
             return
@@ -238,8 +281,8 @@ class BaseGeoProApp(QWidget):
         path, _ = QFileDialog.getSaveFileName(
             self,
             "Select Target File",
-            "",
-            FileTypeConfig.dialog_filter(*self.OUTPUT_FILE_TYPES)
+            directory=package_path,
+            filter=FileTypeConfig.dialog_filter(*self.OUTPUT_FILE_TYPES)
         )
         if path:
             self.target_location = path
@@ -248,7 +291,7 @@ class BaseGeoProApp(QWidget):
             self.set_running_state(RunStates.INIT)
 
     def select_target_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Target Folder")
+        folder = QFileDialog.getExistingDirectory(self, "Select Target Folder", directory=package_path)
         if folder:
             self.target_location = folder
             self.target_entry.setText(folder)
@@ -336,11 +379,19 @@ class BaseGeoProApp(QWidget):
         """Start or stop the running indicator animation."""
         if run_state == RunStates.RUNNING:
             log.debug("Setting run state to: Running")
-            self.running_timer.start()
+            self.running_label.setText(f"Running...")
+            self.gif_status.stop()
+            self.gif_status.setFileName(Animations.GEOLOCATION)
+            self.gif_status.start()
+            # self.running_timer.start()
         elif run_state == RunStates.FINISHED:
             log.debug("Setting run state to: Finished")
             self.running_label.setText(f"Scraping completed.")
-            self.running_timer.stop()
+            self.gif_status.stop()
+            self.gif_status.setFileName(Animations.COMPLETED)
+            self.gif_status.start()
+            self.execute_button.setEnabled(True)
+            # self.running_timer.stop()
         elif run_state == RunStates.INIT:
             log.debug("Setting run state to: Init")
             if self.source_entry.text() == "":
@@ -348,9 +399,18 @@ class BaseGeoProApp(QWidget):
             elif self.target_entry.text() == "":
                 status_text = "Please select a target file/folder."
             else:
-                status_text = "Ready to scrape data from Google Maps."
+                status_text = "GeoPro ready!"
             self.running_label.setText(status_text)
-            self.running_timer.stop()
+            self.gif_status.stop()
+            self.gif_status.setFileName(Animations.GEOLOCATION)
+            self.gif_status.jumpToFrame(0)
+            # self.running_timer.stop()
+        elif run_state == RunStates.USER_INPUT:
+            self.running_label.setText("Waiting for user input...")
+            self.gif_status.stop()
+            self.gif_status.setFileName(Animations.MATCHING)
+            self.gif_status.start()
+
         self.run_state = run_state
 
     def update_execute_button(self):
