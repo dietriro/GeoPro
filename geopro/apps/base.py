@@ -5,13 +5,14 @@ import requests
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit,
     QFileDialog, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QCheckBox, QHeaderView, QApplication
+    QCheckBox, QHeaderView, QApplication, QSplitter
 )
 from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QMovie
 from pathlib import Path
 
-from geopro.core import FileTypeConfig, RunStates, Animations, package_path
+from geopro.core import FileTypeConfig, RunStates
+from geopro.config import package_path, Animations
 from geopro.logging import setup_logging
 
 log = setup_logging()
@@ -85,8 +86,23 @@ class BaseGeoProApp(QWidget):
         self.right_panel = QWidget()
         self.right_layout = QVBoxLayout(self.right_panel)
 
-        self.main_layout.addWidget(self.left_panel, stretch=3)
-        self.main_layout.addWidget(self.right_panel, stretch=2)
+        # splitter
+        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter.addWidget(self.left_panel)
+        self.splitter.addWidget(self.right_panel)
+        self.splitter.setStretchFactor(0, 4)
+        self.splitter.setStretchFactor(1, 3)
+        self.splitter.setHandleWidth(4)
+        self.splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #DDD;  /* gray */
+            }
+            QSplitter::handle:hover {
+                background-color: #AAA;  /* darker on hover */
+            }
+        """)
+
+        self.main_layout.addWidget(self.splitter)
 
     def init_ui_source_selection(self):
         self.source_label = QLabel("Select Source:")
@@ -174,7 +190,6 @@ class BaseGeoProApp(QWidget):
         self.gif_label.setAlignment(Qt.AlignCenter)
 
         # Load the GIF into QMovie
-        package_path = os.path.dirname(requests.__file__)
         self.gif_status = QMovie(Animations.COMPLETED)
         self.gif_status.setScaledSize(QSize(32, 32))
         self.gif_status.jumpToFrame(0)

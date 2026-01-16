@@ -359,8 +359,6 @@ def process_places_to_kml(
                 write_to_kml(kml_obj, place_name, lat, lon, place_desc)
                 continue
 
-            successful += 1
-
             if match_method == MatchingMethods.BEST:
                 best_match = ranked_matches[0]
             elif match_method == MatchingMethods.THRESHOLD:
@@ -376,14 +374,26 @@ def process_places_to_kml(
                     log.debug(f"Best match score is above threshold: {score} >= {threshold}. Using best match.")
                 else:
                     log.debug(f"Best match score is below threshold: {score} < {threshold}. Requiring user input.")
-                    selection = user_match_selection(lat, lon, ranked_matches)
+                    selection = user_match_selection(place_name, lat, lon, ranked_matches)
+                    if selection == -1:
+                        # original location selected
+                        log.debug("Matching: User selected original location.")
+                        successful += 1
+                        write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                        continue
                     best_match = ranked_matches[selection]
 
                     log.info(f"User selection: {selection}")
-
             elif match_method == MatchingMethods.ALL:
                 # test waiting for button input
-                selection = user_match_selection(lat, lon, ranked_matches)
+                selection = user_match_selection(place_name, lat, lon, ranked_matches)
+                if selection == -1:
+                    # original location selected
+                    log.debug("Matching: User selected original location.")
+                    successful += 1
+                    write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                    continue
+
                 best_match = ranked_matches[selection]
 
                 log.info(f"User selection: {selection}")
@@ -397,6 +407,8 @@ def process_places_to_kml(
             osm_lat = best_match["lat"]
             osm_lon = best_match["lon"]
             osm_name = best_match.get("name", place_name)
+
+            successful += 1
 
             write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc)
 

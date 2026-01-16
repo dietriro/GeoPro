@@ -3,16 +3,18 @@ import os
 import json
 import logging
 
-from PyQt5.QtCore import Qt, QEventLoop, QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import Qt, QEventLoop, QObject, pyqtSignal, pyqtSlot, QPoint, QSize
+from PyQt5.QtGui import QPixmap, QPainter, QPolygon, QColor, QFont, QIcon
 from PyQt5.QtWebChannel import QWebChannel
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QHBoxLayout, QWidget, QVBoxLayout, QTableWidget, \
-    QTableWidgetItem, QPushButton, QMessageBox, QHeaderView
+    QTableWidgetItem, QPushButton, QMessageBox, QHeaderView, QToolButton
 
 from geopro.functions.osm_fitting import process_places_to_kml, MatchingMethods
 # from geopro.functions.osm_fitting import OSMFittingWorker
 from geopro.apps.base import BaseGeoProApp
 from geopro.core import FileTypeConfig, RunStates
+from geopro.config import Icons
 
 log = logging.getLogger("geopro")
 log.setLevel(logging.DEBUG)
@@ -22,7 +24,7 @@ DEFAULT_THRESHOLD = 0.7
 
 class Emitter(QObject):
     status = pyqtSignal(str)
-    user_match_selection = pyqtSignal(float, float, list)
+    user_match_selection = pyqtSignal(str, float, float, list)
     set_processing_result = pyqtSignal(str, int, int, bool)
 
 class MapBridge(QObject):
@@ -62,6 +64,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.init_ui_execution_controls()
 
         self.init_ui_map_matching()
+        self.init_ui_original_location_simple()
         self.init_ui_matching_table()
         self.init_ui_matching_selection()
 
@@ -106,7 +109,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.map_container = QWidget()
         self.map_layout = QVBoxLayout(self.map_container)
 
-        self.right_layout.addWidget(self.map_container, stretch=3)
+        self.right_layout.addWidget(self.map_container, stretch=4)
 
         self.map_view = QWebEngineView()
         self.map_layout.addWidget(self.map_view)
@@ -118,11 +121,63 @@ class OSMGeoProApp(BaseGeoProApp):
         channel.registerObject("bridge", self.bridge)
         self.map_view.page().setWebChannel(channel)
 
+    def init_ui_original_location(self):
+        self.layout_match_original = QVBoxLayout()
+        self.layout_match_original.setContentsMargins(10, 0, 10, 0)
+        self.layout_match_original.setSpacing(0)
+        self.right_layout.addLayout(self.layout_match_original)
+
+        self.layout_match_title = QHBoxLayout()
+        self.layout_match_coordinates = QHBoxLayout()
+        self.layout_match_title.setSpacing(0)
+        self.layout_match_coordinates.setSpacing(0)
+        self.layout_match_original.addLayout(self.layout_match_title)
+        self.layout_match_original.addLayout(self.layout_match_coordinates)
+
+        self.label_matching_title = QLabel("Match original location:")
+        self.label_matching_name = QLabel("")
+        self.label_matching_lat = QLabel("")
+        self.label_matching_lon = QLabel("")
+
+        self.label_matching_title.setStyleSheet("background-color: #FFFFFF;padding-left: 00px;padding-right: 20px;")
+        self.label_matching_name.setStyleSheet("background-color: #FFFFFF;padding-left: 0px;padding-right: 20px;")
+        self.label_matching_lat.setStyleSheet("background-color: #FFFFFF;padding-left: 0px;padding-right: 20px;")
+        self.label_matching_lon.setStyleSheet("background-color: #FFFFFF;padding-left: 0px;padding-right: 20px;")
+
+        self.layout_match_title.addWidget(self.label_matching_title)
+        self.layout_match_title.addWidget(self.label_matching_lat)
+        self.layout_match_coordinates.addWidget(self.label_matching_name)
+        self.layout_match_coordinates.addWidget(self.label_matching_lon)
+
+        # self.right_layout.setContentsMargins(30, 30, 30, 30)
+        # self.right_layout.setSpacing(60)
+
+    def init_ui_original_location_simple(self):
+        self.layout_match_original = QHBoxLayout()
+        self.layout_match_original.setContentsMargins(10, 0, 10, 0)
+        self.layout_match_original.setSpacing(0)
+        self.right_layout.addLayout(self.layout_match_original)
+
+        # self.icon_match_original = QIcon(Icons.MARKER_MATCH)
+        self.label_matching_name = QLabel("")
+        self.label_matching_name.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self.button_trigger_original = QPushButton()
+        self.button_trigger_original.setIcon(QIcon(Icons.MARKER_ORIGINAL))  # set the icon
+        self.button_trigger_original.setIconSize(QSize(18, 18))  # control size
+        self.button_trigger_original.setFixedSize(24, 24)  # button size matches icon nicely
+        self.button_trigger_original.clicked.connect(self.on_button_org_trigger)
+
+        self.label_matching_name.setStyleSheet("background-color: #FFFFFF;padding-left: 5px;padding-right: 20px;")
+
+        self.layout_match_original.addWidget(self.button_trigger_original)
+        self.layout_match_original.addWidget(self.label_matching_name)
+
     def init_ui_matching_table(self):
         self.matches_container = QWidget()
         self.matches_layout = QVBoxLayout(self.matches_container)
 
-        self.right_layout.addWidget(self.matches_container, stretch=2)
+        self.right_layout.addWidget(self.matches_container, stretch=4)
 
         self.matches_table = QTableWidget()
         self.matches_table.setColumnCount(3)
@@ -149,16 +204,37 @@ class OSMGeoProApp(BaseGeoProApp):
 
     def init_ui_matching_selection(self):
         self.matches_selection_layout = QHBoxLayout()
+        self.matches_selection_layout.setContentsMargins(10, 0, 10, 0)
 
         self.right_layout.addLayout(self.matches_selection_layout, stretch=1)
 
-        self.matches_select_button = QPushButton("Confirm selection")
-        self.matches_select_button.clicked.connect(self.on_button_select_match)
+        button_style = """
+        QPushButton {
+            text-align: left;
+            padding-left: 8px;     /* space between icon and text */
+            padding-top: 4px;     /* space between icon and text */
+            padding-bottom: 4px;     /* space between icon and text */
+        }
+        """
 
+        self.matches_select_button = QPushButton("         Confirm selection")
+        self.matches_select_button.clicked.connect(self.on_button_select_match)
+        self.matches_select_button.setIcon(QIcon(Icons.MARKER_MATCH))
+        self.matches_select_button.setIconSize(QSize(18, 18))
+        self.matches_select_button.setStyleSheet(button_style)
+
+        self.org_loc_select_button = QPushButton("         Confirm original location")
+        self.org_loc_select_button.clicked.connect(self.on_button_select_org_loc)
+        self.org_loc_select_button.setIcon(QIcon(Icons.MARKER_ORIGINAL))
+        self.org_loc_select_button.setIconSize(QSize(18, 18))
+        self.org_loc_select_button.setStyleSheet(button_style)
+
+        self.matches_selection_layout.addWidget(self.org_loc_select_button)
         self.matches_selection_layout.addWidget(self.matches_select_button)
 
     def init_finish(self):
         self.headless_checkbox.setEnabled(False)
+        self.reset_matching()
         super().init_finish()
 
     # ------------------------------------------------------------------
@@ -169,23 +245,34 @@ class OSMGeoProApp(BaseGeoProApp):
         self.threshold_entry.setEnabled(self.matching_method == MatchingMethods.THRESHOLD)
         log.debug(f"Matching method changed: {self.matching_method}")
 
+    def on_button_select_org_loc(self):
+        self.selected_match = -1
+        self.reset_matching()
+
+        if self.match_selection_loop is not None:
+            self.match_selection_loop.quit()
+            self.match_selection_loop = None
 
     def on_button_select_match(self):
         if self.selected_match is None:
             QMessageBox.warning(self, "No selection", "Please select a place.")
             return
 
-        # self.load_map(
-        #     center_lat=-26.6712706,
-        #     center_lon=152.8719849,
-        #     matches=[]
-        # )
-
-        self.matches_select_button.setEnabled(False)
+        self.reset_matching()
 
         if self.match_selection_loop is not None:
             self.match_selection_loop.quit()
             self.match_selection_loop = None
+
+    def on_button_org_trigger(self):
+        """
+        Show original location on map when the user triggers it
+        """
+        self.map_view.page().runJavaScript(
+            f"originalMarker.openPopup();"
+        )
+
+        log.debug(f"User triggered original marker")
 
     def on_click_table(self):
         """
@@ -215,12 +302,15 @@ class OSMGeoProApp(BaseGeoProApp):
 
         log.debug(f"User selected match row: {self.selected_match}")
 
-    def user_match_selection(self, lat_org, lon_org, matches):
+    def user_match_selection(self, name_org, lat_org, lon_org, matches):
         # update animation
         self.set_running_state(RunStates.USER_INPUT)
 
         # update map
         self.load_map(lat_org, lon_org, matches)
+
+        # update original location
+        self.set_matching_original_loc(name_org, lat_org, lon_org)
 
         # update table
         self.update_matches_table(matches)
@@ -228,9 +318,11 @@ class OSMGeoProApp(BaseGeoProApp):
         # reset selected match and enable button
         self.selected_match = None
         self.matches_select_button.setEnabled(True)
+        self.org_loc_select_button.setEnabled(True)
+        self.button_trigger_original.setEnabled(True)
 
-    def trigger_user_match_selection(self, lat_org, lon_org, matches):
-        self.emitter.user_match_selection.emit(lat_org, lon_org, matches)
+    def trigger_user_match_selection(self, name_org, lat_org, lon_org, matches):
+        self.emitter.user_match_selection.emit(name_org, lat_org, lon_org, matches)
 
         # block function until selection is made
         self.match_selection_loop = QEventLoop()
@@ -239,6 +331,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.emitter.status.emit(RunStates.RUNNING)
 
         return self.selected_match
+
     # ------------------------------------------------------------------
     # CSV relevance counting
     # ------------------------------------------------------------------
@@ -343,7 +436,7 @@ class OSMGeoProApp(BaseGeoProApp):
                 f"""
                 const icon_{idx} = L.divIcon({{
                     className: '',
-                    html: '<div class="marker-numbered"><span>{idx}</span></div>',
+                    html: '<div class="marker-base marker-numbered"><span>{idx}</span></div>',
                     iconSize: [30, 30],
                     iconAnchor: [15, 30],
                     popupAnchor: [0, -30]
@@ -387,13 +480,13 @@ class OSMGeoProApp(BaseGeoProApp):
           <meta charset="utf-8" />
           <style>
           html, body, #map {{ height: 100%; margin: 0; }}
-          .marker-numbered {{
-              background-color: #1976d2;
+          .marker-base {{
+              background-color: #277fca;
               border-radius: 50% 50% 50% 0;
               width: 30px;
               height: 30px;
               transform: rotate(-45deg);
-              border: 2px solid white;
+              border: 1px solid #2e6c97;
               text-align: center;
               color: white;
               font-weight: bold;
@@ -401,9 +494,21 @@ class OSMGeoProApp(BaseGeoProApp):
               font-size: 14px;
             }}
             
-            .marker-numbered span {{
+            .marker-base span {{
               transform: rotate(45deg);
               display: block;
+            }}
+            
+            /* Variant 1 */
+            .marker-numbered {{
+                background-color: #277fca;
+                border: 1px solid #2e6c97;
+            }}
+            
+            /* Variant 2 */
+            .marker-original {{
+                background-color: #cc2a3d;
+                border: 1px solid #982e40;
             }}
           </style>
           <link
@@ -428,11 +533,16 @@ class OSMGeoProApp(BaseGeoProApp):
             }}).addTo(map);
 
             // Original GeoJSON point
+            const icon_org = L.divIcon({{
+                className: '',
+                html: '<div class="marker-base marker-original"><span>O</span></div>',
+                iconSize: [30, 30],
+                iconAnchor: [15, 30],
+                popupAnchor: [0, -30]
+            }});
+                
             const originalMarker = L.marker([{center_lat}, {center_lon}], {{
-              icon: L.icon({{
-                iconUrl: 'https://maps.gstatic.com/mapfiles/ms2/micons/red-dot.png',
-                iconSize: [32, 32]
-              }})
+              icon: icon_org
             }}).addTo(map).bindPopup("Original location");
 
             // Matched OSM places
@@ -475,6 +585,26 @@ class OSMGeoProApp(BaseGeoProApp):
                 if col >= 3:
                     item.setTextAlignment(Qt.AlignCenter)
                 self.matches_table.setItem(row, col, item)
+
+    def set_matching_original_loc(self, name, lat, lon):
+        self.label_matching_name.setText(f"{name} ({lat}, {lon})")
+        # self.label_matching_lat.setText(f"Lat: {lat}")
+        # self.label_matching_lon.setText(f"Lon: {lon}")
+
+    def reset_matching(self):
+        self.matches_select_button.setEnabled(False)
+        self.org_loc_select_button.setEnabled(False)
+        self.button_trigger_original.setEnabled(False)
+
+        self.matches_table.setRowCount(0)
+        self.map_view.setHtml("")
+        self.label_matching_name.setText("")
+
+    # def set_running_state(self, run_state: str):
+    #     super().set_running_state(run_state)
+    #     if run_state == RunStates.FINISHED:
+    #         self.matches_table.setRowCount(0)
+    #         self.map_view.setHtml("")
 
     # ------------------------------------------------------------------
     # Execution
