@@ -1,6 +1,7 @@
 import os
 import logging
 from dataclasses import dataclass
+from enum import Enum
 
 import geopro
 
@@ -36,6 +37,28 @@ class Icons:
 class Themes:
     DARK = "dark"
     LIGHT = "light"
+
+
+class ColorRole(Enum):
+    ACTIVE = "active"
+    SKIPPED = "skipped"
+    SUCCESS = "success"
+    INIT = "init"
+
+
+class Colors:
+    TableBackground = {
+        Themes.DARK: {
+            ColorRole.ACTIVE:  "#8AB4F7",
+            ColorRole.SKIPPED: "#A0721A",
+            ColorRole.SUCCESS: "#6E9E70",
+        },
+        Themes.LIGHT: {
+            ColorRole.ACTIVE:  "#BBDEFB",
+            ColorRole.SKIPPED: "#FFF59D",
+            ColorRole.SUCCESS: "#C8E6C9",
+        },
+    }
 
 
 class RunningConfig:

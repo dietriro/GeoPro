@@ -14,7 +14,7 @@ from pathlib import Path
 import qdarktheme
 
 from geopro.core import FileTypeConfig, RunStates
-from geopro.config import package_path, Animations, RunningConfig, Themes, AnimationStates
+from geopro.config import package_path, Animations, RunningConfig, Themes, AnimationStates, ColorRole, Colors
 from geopro.log import setup_logging
 
 log = setup_logging()
@@ -55,6 +55,7 @@ class BaseGeoProApp(QMainWindow):
         self.run_state = None
         self.file_row_map = {}
         self.thread_execution = None
+        self.row_colors = None
 
         self._init_window()
         self.init_ui_base()
@@ -342,6 +343,7 @@ class BaseGeoProApp(QMainWindow):
     def populate_table(self, files):
         self.output_table.setRowCount(0)
         self.file_row_map.clear()
+        self.row_colors = list()
 
         for row, path in enumerate(files):
             self.output_table.insertRow(row)
@@ -361,6 +363,8 @@ class BaseGeoProApp(QMainWindow):
             layout.setAlignment(Qt.AlignCenter)
             layout.setContentsMargins(0, 0, 0, 0)
             self.output_table.setCellWidget(row, len(self.TABLE_HEADERS) - 1, container)
+
+            self.row_colors.append(ColorRole.INIT)
 
     def update_table(self):
         pass
@@ -383,18 +387,36 @@ class BaseGeoProApp(QMainWindow):
         checkbox.setChecked(finished)
 
         if finished:
-            color = QColor("#FFF59D") if skipped_rows > 0 else QColor("#C8E6C9")
+            if skipped_rows > 0:
+                color = Colors.TableBackground[RunningConfig.theme][ColorRole.SKIPPED]
+                self.row_colors[row] = ColorRole.SKIPPED
+            else:
+                color = Colors.TableBackground[RunningConfig.theme][ColorRole.SUCCESS]
+                self.row_colors[row] = ColorRole.SUCCESS
         elif total_processed > 0:
-            color = QColor("#8ab4f7")
+            color = Colors.TableBackground[RunningConfig.theme][ColorRole.ACTIVE]
+            self.row_colors[row] = ColorRole.ACTIVE
         else:
             return
 
         for col in range(self.output_table.columnCount()):
             item = self.output_table.item(row, col)
             if item:
-                item.setBackground(color)
+                item.setBackground(QColor(color))
 
         QApplication.processEvents()
+
+    def update_table_colors(self):
+        if self.row_colors is None:
+            return
+
+        for row, role in enumerate(self.row_colors):
+            color = QColor(Colors.TableBackground[RunningConfig.theme][role])
+
+            for col in range(self.output_table.columnCount()):
+                item = self.output_table.item(row, col)
+                if item is not None:
+                    item.setBackground(color)
 
     # ------------------------------------------------------------------
     # Running indicator
@@ -464,6 +486,9 @@ class BaseGeoProApp(QMainWindow):
 
         # update global theme
         qdarktheme.setup_theme(theme)
+
+        # update table row color
+        self.update_table_colors()
 
         # update current GIF
         # self.set_status_animation(animation_state=AnimationStates.PLAYING)
