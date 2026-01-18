@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox,QHBoxLayo
 
 from geopro.functions.gmaps_scraping import scrape_from_file, SupportedMethods
 from geopro.apps.base import BaseGeoProApp
-from geopro.core import FileTypeConfig
+from geopro.core import FileTypeConfig, EmitterGMaps
 
 log = logging.getLogger("geopro")
 
@@ -38,11 +38,25 @@ class GMapsGeoProApp(BaseGeoProApp):
 
         self.init_ui_execution_controls()
 
+        self.init_ui_status_bar()
+
+        self.emitter = EmitterGMaps()
+        self.emitter.status.connect(self.set_running_state)
+        self.emitter.set_processing_result.connect(self.set_processing_result)
+
         self.init_finish()
 
     # -------------------------
     # Initialization
     # -------------------------
+    def init_finish(self):
+        super().init_finish()
+
+        # disable splitter as the right side is currently not needed
+        self.splitter.widget(1).hide()
+        self.splitter.handle(1).setEnabled(False)
+        self.splitter.setSizes([1, 0])
+
     def init_ui_method_selection(self):
         method_layout = QHBoxLayout()
         # Label
@@ -53,7 +67,7 @@ class GMapsGeoProApp(BaseGeoProApp):
         self.method_dropdown = QComboBox()
         self.method_dropdown.addItems(["Selenium", "GMaps Api"])
         method_layout.addWidget(self.method_dropdown)
-        self.layout.addLayout(method_layout)
+        self.left_layout.addLayout(method_layout)
 
         # Variable holding the current selection
         self.scraping_method = self.method_dropdown.currentText()
@@ -71,9 +85,9 @@ class GMapsGeoProApp(BaseGeoProApp):
         self.api_entry.setEnabled(False)
         api_layout.addWidget(self.api_entry)
 
-        self.layout.addLayout(api_layout)
+        self.left_layout.addLayout(api_layout)
 
-        self.layout.addSpacing(20)
+        self.left_layout.addSpacing(20)
 
 
     # -------------------------
@@ -116,7 +130,7 @@ class GMapsGeoProApp(BaseGeoProApp):
     # Execution
     # ------------------------------------------------------------------
     def execute(self):
-        self.set_running_state(RunStates.RUNNING)
+        self.emitter.status.emit(RunStates.RUNNING)
 
         # Runs scraping for each file
         for input_file_path in self.source_files:
@@ -128,12 +142,12 @@ class GMapsGeoProApp(BaseGeoProApp):
             scrape_from_file(input_file=input_file_path,
                              output_file=output_file_path,
                              overwrite_output=self.overwrite_target,
-                             update_function=self.set_processing_result,
+                             update_function=self.emitter.set_processing_result.emit,
                              run_headless=self.run_headless,
                              scraping_method=self.scraping_method,
                              api_key=self.api_entry.text())
 
-        self.set_running_state(RunStates.FINISHED)
+        self.emitter.status.emit(RunStates.FINISHED)
 
 
 

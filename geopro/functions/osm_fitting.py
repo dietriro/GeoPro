@@ -387,6 +387,7 @@ def process_places_to_kml(
             elif match_method == MatchingMethods.ALL:
                 # test waiting for button input
                 selection = user_match_selection(place_name, lat, lon, ranked_matches)
+                log.info(f"User selection: {selection}")
                 if selection == -1:
                     # original location selected
                     log.debug("Matching: User selected original location.")
@@ -414,7 +415,7 @@ def process_places_to_kml(
 
         except Exception as e:
             skipped += 1
-            log.exception(f"Error processing feature {idx}: {e}")
+            log.exception(f"Error processing location {idx}: {e}")
 
         # -----------------------------------------------------
         # Update AFTER each feature
@@ -424,7 +425,8 @@ def process_places_to_kml(
             input_file_path,
             successful,
             skipped,
-            round(avg_score, 4),
+
+            # round(avg_score, 4),
         )
 
     # ---------------------------------------------------------

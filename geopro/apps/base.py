@@ -5,20 +5,23 @@ import requests
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QLineEdit,
     QFileDialog, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QCheckBox, QHeaderView, QApplication, QSplitter
+    QCheckBox, QHeaderView, QApplication, QSplitter, QStatusBar, QMainWindow
 )
 from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
-from PyQt5.QtGui import QColor, QMovie
+from PyQt5.QtGui import QColor, QMovie, QPalette
 from pathlib import Path
 
+import qdarktheme
+
 from geopro.core import FileTypeConfig, RunStates
-from geopro.config import package_path, Animations
-from geopro.logging import setup_logging
+from geopro.config import package_path, Animations, RunningConfig, Themes, AnimationStates
+from geopro.log import setup_logging
 
 log = setup_logging()
 
 
-class BaseGeoProApp(QWidget):
+
+class BaseGeoProApp(QMainWindow):
     """
     Fully reusable base class for file-based scraping apps.
     No scraper-specific logic lives here.
@@ -43,8 +46,6 @@ class BaseGeoProApp(QWidget):
 
     def __init__(self):
         super().__init__()
-
-
 
         self.source_type = None
         self.source_files = None
@@ -75,8 +76,12 @@ class BaseGeoProApp(QWidget):
         self.init_ui_execution_controls()
 
     def init_ui_base(self):
-        self.main_layout = QHBoxLayout()
-        self.setLayout(self.main_layout)
+        # --- Central widget ---
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
+
+        # --- Layout on central widget ---
+        self.main_layout = QVBoxLayout(self.central_widget)
 
         # Left: existing UI
         self.left_panel = QWidget()
@@ -90,17 +95,7 @@ class BaseGeoProApp(QWidget):
         self.splitter = QSplitter(Qt.Horizontal)
         self.splitter.addWidget(self.left_panel)
         self.splitter.addWidget(self.right_panel)
-        self.splitter.setStretchFactor(0, 4)
-        self.splitter.setStretchFactor(1, 3)
-        self.splitter.setHandleWidth(4)
-        self.splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: #DDD;  /* gray */
-            }
-            QSplitter::handle:hover {
-                background-color: #AAA;  /* darker on hover */
-            }
-        """)
+        self.splitter.setSizes([600,500])
 
         self.main_layout.addWidget(self.splitter)
 
@@ -192,36 +187,51 @@ class BaseGeoProApp(QWidget):
         # Load the GIF into QMovie
         self.gif_status = QMovie(Animations.COMPLETED)
         self.gif_status.setScaledSize(QSize(32, 32))
-        self.gif_status.jumpToFrame(0)
+        self.gif_status.setCacheMode(QMovie.CacheAll)
         self.gif_status.finished.connect(self.on_gif_finished)
         self.gif_label.setMovie(self.gif_status)
 
         self.running_label = QLabel("")
         self.running_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.running_label.setStyleSheet("background-color: #FFFFFF;padding-left: 20px;padding-right: 20px;")
+        self.running_label.setStyleSheet("padding-left: 20px;padding-right: 20px;")
 
         self.execute_button = QPushButton("Run")
         self.execute_button.setEnabled(False)
         self.execute_button.clicked.connect(self.on_button_execute)
-        # self.execute_button.setFixedWidth(250)
 
-        # self.running_timer = QTimer()
-        # self.running_timer.setInterval(500)
-        # self.running_timer.timeout.connect(self._animate_running)
+        self.left_layout.addWidget(self.execute_button)
 
-        bottom = QHBoxLayout()
-        bottom.addWidget(self.gif_label)
-        bottom.addWidget(self.running_label)
-        bottom.addStretch()
-        bottom.addWidget(self.execute_button)
 
-        bottom.setSpacing(0)
-        bottom.setContentsMargins(0, 0, 0, 0)
+    def init_ui_status_bar(self):
+        """Create and configure the status bar."""
 
-        self.left_layout.addLayout(bottom)
+        # --- Create and attach the status bar ---
+        self.status_bar = QStatusBar(self)
+        self.setStatusBar(self.status_bar)
+
+        self.status_bar.addWidget(self.gif_label)
+        self.status_bar.addWidget(self.running_label)
+
+        # --- Theme switch (right side / permanent widget) ---
+        self.theme_switch = QCheckBox("Dark mode")
+        self.theme_switch.setChecked(False)
+        self.theme_switch.stateChanged.connect(self.on_theme_switch_changed)
+        self.status_bar.addPermanentWidget(self.theme_switch)
+
+    def on_theme_switch_changed(self, state: int):
+        is_dark = state == Qt.Checked
+
+        if is_dark:
+            # Apply dark theme here
+            self.set_theme(Themes.DARK)
+        else:
+            # Apply light theme here
+            self.set_theme(Themes.LIGHT)
 
     def init_finish(self):
+        self.set_theme(RunningConfig.theme)
         self.set_running_state(RunStates.INIT)
+
         self.update_target_buttons()
 
     def on_button_execute(self):
@@ -243,9 +253,10 @@ class BaseGeoProApp(QWidget):
     def select_source_files(self):
         files, _ = QFileDialog.getOpenFileNames(
             self,
-            "Select Files",
+            "Select Source File(s)",
             directory=package_path,
-            filter=FileTypeConfig.dialog_filter(*self.INPUT_FILE_TYPES)
+            filter=FileTypeConfig.dialog_filter(*self.INPUT_FILE_TYPES),
+            options=QFileDialog.DontUseNativeDialog
         )
         if not files:
             return
@@ -257,9 +268,12 @@ class BaseGeoProApp(QWidget):
         self.after_source_selected()
 
     def select_source_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder", directory=package_path)
+        folder = QFileDialog.getExistingDirectory(self,
+                                                  "Select Source Folder",
+                                                  directory=package_path,
+                                                  options=QFileDialog.DontUseNativeDialog)
         if not folder:
-            log.error("Folder is not valid. Terminating.")
+            log.warning("Folder is not valid. Terminating.")
             return
 
         log.debug(f"Selected folder: {folder}")
@@ -297,7 +311,8 @@ class BaseGeoProApp(QWidget):
             self,
             "Select Target File",
             directory=package_path,
-            filter=FileTypeConfig.dialog_filter(*self.OUTPUT_FILE_TYPES)
+            filter=FileTypeConfig.dialog_filter(*self.OUTPUT_FILE_TYPES),
+            options=QFileDialog.DontUseNativeDialog
         )
         if path:
             self.target_location = path
@@ -306,7 +321,10 @@ class BaseGeoProApp(QWidget):
             self.set_running_state(RunStates.INIT)
 
     def select_target_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Target Folder", directory=package_path)
+        folder = QFileDialog.getExistingDirectory(self,
+                                                  "Select Target Folder",
+                                                  directory=package_path,
+                                                  options=QFileDialog.DontUseNativeDialog)
         if folder:
             self.target_location = folder
             self.target_entry.setText(folder)
@@ -347,8 +365,7 @@ class BaseGeoProApp(QWidget):
     def update_table(self):
         pass
 
-    def set_processing_result(self, file_path, successful_rows, skipped_rows, finished=None
-    ):
+    def set_processing_result(self, file_path, successful_rows, skipped_rows):
         if file_path not in self.file_row_map:
             return
 
@@ -360,8 +377,7 @@ class BaseGeoProApp(QWidget):
         relevant = int(self.output_table.item(row, 1).text())
         total_processed = successful_rows + skipped_rows
 
-        if finished is None:
-            finished = total_processed == relevant
+        finished = total_processed == relevant
 
         checkbox = self.output_table.cellWidget(row, 4).findChild(QCheckBox)
         checkbox.setChecked(finished)
@@ -369,7 +385,7 @@ class BaseGeoProApp(QWidget):
         if finished:
             color = QColor("#FFF59D") if skipped_rows > 0 else QColor("#C8E6C9")
         elif total_processed > 0:
-            color = QColor("#BBDEFB")
+            color = QColor("#8ab4f7")
         else:
             return
 
@@ -395,18 +411,12 @@ class BaseGeoProApp(QWidget):
         if run_state == RunStates.RUNNING:
             log.debug("Setting run state to: Running")
             self.running_label.setText(f"Running...")
-            self.gif_status.stop()
-            self.gif_status.setFileName(Animations.GEOLOCATION)
-            self.gif_status.start()
-            # self.running_timer.start()
+            self.set_status_animation(Animations.GEOLOCATION)
         elif run_state == RunStates.FINISHED:
             log.debug("Setting run state to: Finished")
             self.running_label.setText(f"Scraping completed.")
-            self.gif_status.stop()
-            self.gif_status.setFileName(Animations.COMPLETED)
-            self.gif_status.start()
+            self.set_status_animation(Animations.COMPLETED)
             self.execute_button.setEnabled(True)
-            # self.running_timer.stop()
         elif run_state == RunStates.INIT:
             log.debug("Setting run state to: Init")
             if self.source_entry.text() == "":
@@ -416,17 +426,48 @@ class BaseGeoProApp(QWidget):
             else:
                 status_text = "GeoPro ready!"
             self.running_label.setText(status_text)
-            self.gif_status.stop()
-            self.gif_status.setFileName(Animations.GEOLOCATION)
-            self.gif_status.jumpToFrame(0)
-            # self.running_timer.stop()
+            self.set_status_animation(Animations.GEOLOCATION, AnimationStates.FRAME)
         elif run_state == RunStates.USER_INPUT:
             self.running_label.setText("Waiting for user input...")
-            self.gif_status.stop()
-            self.gif_status.setFileName(Animations.MATCHING)
-            self.gif_status.start()
+            self.set_status_animation(Animations.MATCHING)
 
         self.run_state = run_state
+
+    def set_status_animation(self, animation=None, animation_state=AnimationStates.PLAYING):
+        # if animation_state in [AnimationStates.PLAYING, AnimationStates.STOPPED]:
+        self.gif_status.stop()
+
+        if animation is None:
+            # reset current animation if no new animation is provided, current theme is automatically used
+            self.gif_status.setFileName(Animations.get_path(RunningConfig.animation))
+        else:
+            # set to new animation with current theme
+            self.gif_status.setFileName(Animations.get_path(animation))
+            RunningConfig.animation = animation
+
+        if animation_state == AnimationStates.PLAYING:
+            self.gif_status.start()
+
+        if animation_state == AnimationStates.FRAME:
+            self.gif_status.jumpToFrame(self.gif_status.frameCount()-1)
+
+        RunningConfig.animation_state = animation_state
+
+        log.debug(f"Set status animation to: {RunningConfig.animation}")
+        log.debug(f"Set animation state to: {RunningConfig.animation_state}")
+
+    def set_theme(self, theme):
+        RunningConfig.theme = theme
+
+        # update UI button - only necessary during initialization
+        self.theme_switch.setChecked(theme == Themes.DARK)
+
+        # update global theme
+        qdarktheme.setup_theme(theme)
+
+        # update current GIF
+        # self.set_status_animation(animation_state=AnimationStates.PLAYING)
+        self.set_status_animation(animation_state=RunningConfig.animation_state)
 
     def update_execute_button(self):
         self.execute_button.setEnabled(

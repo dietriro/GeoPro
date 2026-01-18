@@ -13,19 +13,15 @@ from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QHBoxLay
 from geopro.functions.osm_fitting import process_places_to_kml, MatchingMethods
 # from geopro.functions.osm_fitting import OSMFittingWorker
 from geopro.apps.base import BaseGeoProApp
-from geopro.core import FileTypeConfig, RunStates
+from geopro.core import FileTypeConfig, RunStates, EmitterOSM
 from geopro.config import Icons
+from geopro.ui.widgets import IconTextButton
 
 log = logging.getLogger("geopro")
 log.setLevel(logging.DEBUG)
 
 DEFAULT_THRESHOLD = 0.7
 
-
-class Emitter(QObject):
-    status = pyqtSignal(str)
-    user_match_selection = pyqtSignal(str, float, float, list)
-    set_processing_result = pyqtSignal(str, int, int, bool)
 
 class MapBridge(QObject):
     markerClicked = pyqtSignal(int)
@@ -44,10 +40,11 @@ class OSMGeoProApp(BaseGeoProApp):
     def __init__(self):
         super().__init__()
 
-        self.emitter = Emitter()
+        self.emitter = EmitterOSM()
         self.emitter.status.connect(self.set_running_state)
         self.emitter.user_match_selection.connect(self.user_match_selection)
         self.emitter.set_processing_result.connect(self.set_processing_result)
+        self.emitter.reset_matching.connect(self.reset_matching)
 
         self.match_selection_loop = None
         self.selected_match = None
@@ -62,6 +59,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.init_ui_progress_table()
 
         self.init_ui_execution_controls()
+        self.init_ui_status_bar()
 
         self.init_ui_map_matching()
         self.init_ui_original_location_simple()
@@ -112,6 +110,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.right_layout.addWidget(self.map_container, stretch=4)
 
         self.map_view = QWebEngineView()
+        self.map_view.page().setBackgroundColor(Qt.black)
         self.map_layout.addWidget(self.map_view)
 
         self.bridge = MapBridge()
@@ -168,7 +167,8 @@ class OSMGeoProApp(BaseGeoProApp):
         self.button_trigger_original.setFixedSize(24, 24)  # button size matches icon nicely
         self.button_trigger_original.clicked.connect(self.on_button_org_trigger)
 
-        self.label_matching_name.setStyleSheet("background-color: #FFFFFF;padding-left: 5px;padding-right: 20px;")
+        self.label_matching_name.setStyleSheet("padding-left: 5px;padding-right: 20px;")
+        # self.label_matching_name.setStyleSheet("background-color: #FFFFFF;padding-left: 5px;padding-right: 20px;")
 
         self.layout_match_original.addWidget(self.button_trigger_original)
         self.layout_match_original.addWidget(self.label_matching_name)
@@ -208,26 +208,12 @@ class OSMGeoProApp(BaseGeoProApp):
 
         self.right_layout.addLayout(self.matches_selection_layout, stretch=1)
 
-        button_style = """
-        QPushButton {
-            text-align: left;
-            padding-left: 8px;     /* space between icon and text */
-            padding-top: 4px;     /* space between icon and text */
-            padding-bottom: 4px;     /* space between icon and text */
-        }
-        """
-
-        self.matches_select_button = QPushButton("         Confirm selection")
+        self.matches_select_button = IconTextButton(QIcon(Icons.MARKER_MATCH), "Confirm selection")
         self.matches_select_button.clicked.connect(self.on_button_select_match)
-        self.matches_select_button.setIcon(QIcon(Icons.MARKER_MATCH))
-        self.matches_select_button.setIconSize(QSize(18, 18))
-        self.matches_select_button.setStyleSheet(button_style)
 
-        self.org_loc_select_button = QPushButton("         Confirm original location")
+        self.org_loc_select_button = IconTextButton(QIcon(Icons.MARKER_ORIGINAL), "Confirm original location")
         self.org_loc_select_button.clicked.connect(self.on_button_select_org_loc)
-        self.org_loc_select_button.setIcon(QIcon(Icons.MARKER_ORIGINAL))
-        self.org_loc_select_button.setIconSize(QSize(18, 18))
-        self.org_loc_select_button.setStyleSheet(button_style)
+
 
         self.matches_selection_layout.addWidget(self.org_loc_select_button)
         self.matches_selection_layout.addWidget(self.matches_select_button)
@@ -247,7 +233,6 @@ class OSMGeoProApp(BaseGeoProApp):
 
     def on_button_select_org_loc(self):
         self.selected_match = -1
-        self.reset_matching()
 
         if self.match_selection_loop is not None:
             self.match_selection_loop.quit()
@@ -257,8 +242,6 @@ class OSMGeoProApp(BaseGeoProApp):
         if self.selected_match is None:
             QMessageBox.warning(self, "No selection", "Please select a place.")
             return
-
-        self.reset_matching()
 
         if self.match_selection_loop is not None:
             self.match_selection_loop.quit()
@@ -298,7 +281,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.matches_table.blockSignals(True)
         self.matches_table.selectRow(selected_index)
         self.matches_table.blockSignals(False)
-        self.selected_match = selected_index - 1
+        self.selected_match = selected_index
 
         log.debug(f"User selected match row: {self.selected_match}")
 
@@ -328,9 +311,22 @@ class OSMGeoProApp(BaseGeoProApp):
         self.match_selection_loop = QEventLoop()
         self.match_selection_loop.exec_()
 
+        # store the selected match picked by the user because it gets overwritten by the next commands
+        selected_match = self.selected_match
+
+        # reset matching ui
+        # self.emitter.reset_matching.emit()
+
+        # set run state to running
         self.emitter.status.emit(RunStates.RUNNING)
 
-        return self.selected_match
+        return selected_match
+
+    def set_running_state(self, run_state: str):
+        super().set_running_state(run_state)
+
+        if run_state == RunStates.RUNNING:
+            self.reset_matching()
 
     # ------------------------------------------------------------------
     # CSV relevance counting

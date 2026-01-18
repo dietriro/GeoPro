@@ -17,7 +17,7 @@ import logging
 import requests
 import simplekml
 
-from geopro.logging import setup_add_logger
+from geopro.log import setup_add_logger
 
 log = logging.getLogger("geopro")
 setup_add_logger('WDM')

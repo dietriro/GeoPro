@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 
+from PyQt5.QtCore import QObject, pyqtSignal
+
 
 @dataclass(frozen=True)
 class FileType:
@@ -21,6 +23,18 @@ class FileTypeConfig:
     @classmethod
     def dialog_filter(cls, *types: FileType) -> str:
         return ";;".join(t.dialog_filter for t in types)
+
+
+class Emitter(QObject):
+    status = pyqtSignal(str)
+    set_processing_result = pyqtSignal(str, int, int)
+
+class EmitterGMaps(Emitter):
+    pass
+
+class EmitterOSM(Emitter):
+    user_match_selection = pyqtSignal(str, float, float, list)
+    reset_matching = pyqtSignal()
 
 
 class RunStates:
