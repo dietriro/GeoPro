@@ -70,7 +70,7 @@ class GMapsGeoProApp(BaseGeoProApp):
         self.left_layout.addLayout(method_layout)
 
         # Variable holding the current selection
-        self.scraping_method = self.method_dropdown.currentText()
+        self.scraping_method = self.method_dropdown.currentText().lower()
 
         # Connect change signal
         self.method_dropdown.currentTextChanged.connect(self.on_method_changed)
