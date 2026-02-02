@@ -9,6 +9,7 @@ log = logging.getLogger("geopro")
 package_path = os.path.dirname(os.path.dirname(geopro.__file__))
 
 PATH_RESOURCES = os.path.join(package_path, "resources")
+PATH_BOOKMARK_ICONS = os.path.join(PATH_RESOURCES, "bookmark_icons.yaml")
 
 @dataclass(frozen=True)
 class Animations:

@@ -6,19 +6,24 @@ import os
 import json
 import random
 import time
+import yaml
+from pathlib import Path
 from typing import Callable
+from pykml.factory import KML_ElementMaker as KML
+from lxml import etree
 
-import simplekml
+from geopro.config import PATH_BOOKMARK_ICONS
 
 log = logging.getLogger("geopro")
 log.setLevel(logging.DEBUG)
 
-# OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 NAME_WEIGHT = 0.7
 DIST_WEIGHT = 0.3
 RADIUS = 1000
 TIMEOUT = 100
 
+MWM_NS = "https://comaps.app"  # The namespace for mwm
+NSMAP = {"mwm": MWM_NS}
 
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -139,6 +144,7 @@ def search_places_around(
             "amenity": tags.get("amenity"),
             "lat": el.get("lat"),
             "lon": el.get("lon"),
+            "original_tags": tags
         })
 
     return results
@@ -249,13 +255,64 @@ def find_best_place_match(
 
     return ranked_matches
 
+def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc, icon_name=None):
+    # Create the ExtendedData element with mwm namespace
+    extdata = etree.Element("{http://www.opengis.net/kml/2.2}ExtendedData", nsmap=NSMAP)
 
-def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc):
-    kml_obj.newpoint(
-        name=place_name,
-        description=place_desc,
-        coords=[(place_lat, place_lon)]
+    # Add the mwm:icon element only if icon_name is provided
+    if icon_name:
+        icon_el = etree.SubElement(extdata, f"{{{MWM_NS}}}icon")
+        icon_el.text = icon_name
+
+    # Create the Placemark
+    placemark = KML.Placemark(
+        KML.name(place_name),
+        KML.description(place_desc),
+        KML.Point(KML.coordinates(f"{place_lon},{place_lat},0")),
+        extdata
     )
+
+    # Append to the Document element
+    kml_obj.Document.append(placemark)
+
+def find_icon_name(place_data, bookmark_icon_file=PATH_BOOKMARK_ICONS):
+    """
+    Find the matching icon name for a place based on its OSM tags
+    and the bookmark icon YAML mapping.
+
+    Returns:
+        str | None  (e.g. "Bar", "Building", ...)
+    """
+
+    bookmark_icon_file = Path(bookmark_icon_file)
+
+    if not bookmark_icon_file.exists():
+        raise FileNotFoundError(bookmark_icon_file)
+
+    with bookmark_icon_file.open("r", encoding="utf-8") as f:
+        icon_map = yaml.safe_load(f) or {}
+
+    tags = place_data.get("original_tags", {})
+    if not isinstance(tags, dict):
+        return None
+
+    # Iterate in YAML order to preserve priority
+    for category, submap in icon_map.items():
+        if category not in tags:
+            continue
+
+        value = tags.get(category)
+        if not value:
+            continue
+
+        # OSM values already use underscores, so no normalization needed
+        if value in submap:
+            return submap[value]
+
+        if "default" in submap:
+            return submap["default"]
+
+    return None
 
 def process_places_to_kml(
         input_file_path: str,
@@ -305,7 +362,10 @@ def process_places_to_kml(
     # ---------------------------------------------------------
     # Prepare KML output
     # ---------------------------------------------------------
-    kml_obj = simplekml.Kml()
+    kml_obj = KML.kml(
+        KML.Document(
+        )
+    )
 
     # ---------------------------------------------------------
     # Main processing loop
@@ -407,6 +467,9 @@ def process_places_to_kml(
                 log.error(f"Match method not supported: {match_method}")
                 continue
 
+            # determine icon for best match
+            icon_name = find_icon_name(best_match)
+
             score = best_match.get("final_score", 0.0)
             scores.append(score)
 
@@ -416,7 +479,7 @@ def process_places_to_kml(
 
             successful += 1
 
-            write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc)
+            write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc, icon_name=icon_name)
 
         except Exception as e:
             skipped += 1
@@ -431,7 +494,8 @@ def process_places_to_kml(
     # Finalize KML
     # ---------------------------------------------------------
     try:
-        kml_obj.save(output_file_path)
+        with open(output_file_path, "wb") as f:
+            f.write(etree.tostring(kml_obj, pretty_print=True, xml_declaration=True, encoding="UTF-8"))
     except Exception as e:
         log.error(f"Failed to finalize KML file: {e}")
 
