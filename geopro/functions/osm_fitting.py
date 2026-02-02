@@ -261,8 +261,8 @@ def process_places_to_kml(
         input_file_path: str,
         output_file_path: str,
         overwrite_output: bool,
-        update_function: Callable[[str, int, int, float], None],
-        user_match_selection,
+        update_function: Callable[[str, int, int], None],
+        user_match_selection: Callable[[str, float, float, list], None],
         match_method: str = MatchingMethods.BEST,
         threshold: float = None,
         include_skipped: bool = True
@@ -343,6 +343,7 @@ def process_places_to_kml(
                 skipped += 1
                 log.warning(f"No OSM candidates found for '{place_name}'")
                 write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                update_function(input_file_path, successful, skipped)
                 continue
 
             # ---- correct call & return handling ----
@@ -357,6 +358,7 @@ def process_places_to_kml(
                 skipped += 1
                 log.warning(f"No suitable OSM match for '{place_name}'")
                 write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                update_function(input_file_path, successful, skipped)
                 continue
 
             if match_method == MatchingMethods.BEST:
@@ -366,6 +368,7 @@ def process_places_to_kml(
                     skipped += 1
                     log.warning(f"No suitable OSM match for '{place_name}'")
                     write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                    update_function(input_file_path, successful, skipped)
                     continue
 
                 score = ranked_matches[0].get("final_score", 0.0)
@@ -380,6 +383,7 @@ def process_places_to_kml(
                         log.debug("Matching: User selected original location.")
                         successful += 1
                         write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                        update_function(input_file_path, successful, skipped)
                         continue
                     best_match = ranked_matches[selection]
 
@@ -393,6 +397,7 @@ def process_places_to_kml(
                     log.debug("Matching: User selected original location.")
                     successful += 1
                     write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                    update_function(input_file_path, successful, skipped)
                     continue
 
                 best_match = ranked_matches[selection]
@@ -420,14 +425,7 @@ def process_places_to_kml(
         # -----------------------------------------------------
         # Update AFTER each feature
         # -----------------------------------------------------
-        avg_score = sum(scores) / len(scores) if scores else 0.0
-        update_function(
-            input_file_path,
-            successful,
-            skipped,
-
-            # round(avg_score, 4),
-        )
+        update_function(input_file_path, successful, skipped)
 
     # ---------------------------------------------------------
     # Finalize KML
@@ -445,9 +443,4 @@ def process_places_to_kml(
     )
 
     # Final UI sync
-    update_function(
-        input_file_path,
-        successful,
-        skipped,
-        round(avg_score, 4),
-    )
+    update_function(input_file_path, successful, skipped)
