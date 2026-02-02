@@ -411,6 +411,10 @@ class BaseGeoProApp(QMainWindow):
             return
 
         for row, role in enumerate(self.row_colors):
+            if role == ColorRole.INIT:
+                # skip if color has not been changed
+                continue
+
             color = QColor(Colors.TableBackground[RunningConfig.theme][role])
 
             for col in range(self.output_table.columnCount()):
