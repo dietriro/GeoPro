@@ -1,0 +1,141 @@
+aeroway:
+  aerodrome: Transport
+amenity:
+  arts_centre: Art
+  atm: Bank
+  bank: Bank
+  bar: Bar
+  bbq: Food
+  bicycle_parking: BicycleParkingCovered
+  bicycle_rental: BicycleRental
+  biergarten: Pub
+  bureau_de_change: Exchange
+  bus_station: Transport
+  cafe: Cafe
+  car_sharing: Transport
+  casino: Entertainment
+  charging_station: ChargingStation
+  childcare: Medicine
+  cinema: Entertainment
+  clinic: Medicine
+  college: Building
+  courthouse: Building
+  dentist: Medicine
+  doctors: Medicine
+  drinking_water: Water
+  fast_food: FastFood
+  ferry_terminal: Transport
+  food_court: Food
+  fountain: Water
+  fuel: Gas
+  grave_yard: Christianity
+  hospital: Medicine
+  ice_cream: Shop
+  kindergarten: Building
+  library: Building
+  marketplace: Shop
+  motorcycle_parking: Parking
+  nightclub: Entertainment
+  parking: Parking
+  pharmacy: Pharmacy
+  place_of_worship: Sights
+  police: Building
+  prison: Building
+  pub: Pub
+  restaurant: Food
+  school: Building
+  taxi: Transport
+  theatre: Theatre
+  vending_machine: Shop
+  veterinary: Animals
+  water_point: Water
+boundary:
+  national_park: Park
+building:
+  train_station: Transport
+  university: Building
+emergency:
+  defibrillator: Medicine
+highway:
+  bus_stop: Transport
+  services: Parking
+historic:
+  archaeological_site: Sights
+  boundary_stone: Sights
+  castle: Sights
+  fort: Sights
+  memorial: Sights
+  monument: Sights
+  ruins: Sights
+  ship: Sights
+  tomb: Sights
+  wayside_cross: Sights
+  wayside_shrine: Sights
+landuse:
+  cemetery: Christianity
+  forest: Park
+leisure:
+  dog_park: Animals
+  fitness_centre: Sport
+  garden: Park
+  nature_reserve: Park
+  park: Park
+  picnic_table: Food
+  skiing: Sport
+  sports_centre: Sport
+  stadium: Stadium
+  swimming_pool: Swim
+  water_park: Swim
+man_made:
+  water_tap: Water
+natural:
+  bare_rock: Mountain
+  beach: Swim
+  cave_entrance: Mountain
+  peak: Mountain
+  rock: Mountain
+  spring: Water
+  volcano: Mountain
+office:
+  default: Building
+  diplomatic: Building
+  lawyer: Building
+public_transport:
+  platform: Transport
+railway:
+  halt: Transport
+  station: Transport
+  tram_stop: Transport
+shop:
+  bookmaker: Entertainment
+  default: Shop
+  funeral_directors: None
+  money_lender: Bank
+sport:
+  default: Sport
+  diving: Swim
+  scuba_diving: Swim
+  swimming: Swim
+tourism:
+  alpine_hut: Hotel
+  apartment: Hotel
+  artwork: Sights
+  attraction: Sights
+  camp_site: Hotel
+  caravan_site: Parking
+  chalet: Hotel
+  gallery: Art
+  guest_house: Hotel
+  hostel: Hotel
+  hotel: Hotel
+  information: Information
+  motel: Hotel
+  museum: Museum
+  picnic_site: Food
+  resort: Hotel
+  theme_park: Entertainment
+  viewpoint: Viewpoint
+  wilderness_hut: Hotel
+  zoo: Animals
+waterway:
+  waterfall: Sights
