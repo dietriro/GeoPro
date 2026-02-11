@@ -12,7 +12,9 @@ from typing import Callable
 from pykml.factory import KML_ElementMaker as KML
 from lxml import etree
 
-from geopro.config import PATH_BOOKMARK_ICONS
+from geopro.config import PATH_BOOKMARK_ICONS, PATH_PLACE_MAPPING
+from geopro.functions.places_feature_matching import parse_mapcss, leave_longest_types, OsmTag, \
+    convert_list_to_feature_types
 
 log = logging.getLogger("geopro")
 log.setLevel(logging.DEBUG)
@@ -30,6 +32,9 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.kumi.systems/api/interpreter",
     # "https://overpass.nchc.org.tw/api/interpreter",
 ]
+
+place_matching_rules = None
+data_place_icons = None
 
 
 class MatchingMethods:
@@ -255,7 +260,7 @@ def find_best_place_match(
 
     return ranked_matches
 
-def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc, icon_name=None):
+def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc, icon_name=None, feature_types=None):
     # Create the ExtendedData element with mwm namespace
     extdata = etree.Element("{http://www.opengis.net/kml/2.2}ExtendedData", nsmap=NSMAP)
 
@@ -263,6 +268,17 @@ def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc, icon_nam
     if icon_name:
         icon_el = etree.SubElement(extdata, f"{{{MWM_NS}}}icon")
         icon_el.text = icon_name
+
+    # Add mwm:featureTypes block if feature_types are provided
+    if feature_types:
+        feature_types_el = etree.SubElement(
+            extdata, f"{{{MWM_NS}}}featureTypes"
+        )
+        for ft in feature_types:
+            value_el = etree.SubElement(
+                feature_types_el, f"{{{MWM_NS}}}value"
+            )
+            value_el.text = ft
 
     # Create the Placemark
     placemark = KML.Placemark(
@@ -275,22 +291,61 @@ def write_to_kml(kml_obj, place_name, place_lat, place_lon, place_desc, icon_nam
     # Append to the Document element
     kml_obj.Document.append(placemark)
 
-def find_icon_name(place_data, bookmark_icon_file=PATH_BOOKMARK_ICONS):
+def load_place_matching_data():
+    place_mapping_file = Path(PATH_PLACE_MAPPING)
+
+    if not place_mapping_file.exists():
+        raise FileNotFoundError(place_mapping_file)
+
+    with place_mapping_file.open("r", encoding="utf-8") as f:
+        return parse_mapcss(f)
+
+def get_place_features(place_data):
     """
     Find the matching icon name for a place based on its OSM tags
     and the bookmark icon YAML mapping.
 
     Returns:
-        str | None  (e.g. "Bar", "Building", ...)
+        str, list | None, None  (e.g. "Bar", "Building", ...)
     """
+    global place_matching_rules
 
-    bookmark_icon_file = Path(bookmark_icon_file)
+    if place_matching_rules is None:
+        place_matching_rules = load_place_matching_data()
 
-    if not bookmark_icon_file.exists():
-        raise FileNotFoundError(bookmark_icon_file)
+    tags = place_data.get("original_tags", {})
+    osm_tags = [OsmTag(key, value) for key, value in tags.items()]
 
-    with bookmark_icon_file.open("r", encoding="utf-8") as f:
-        icon_map = yaml.safe_load(f) or {}
+    matched_types = list()
+    for type_strings, rule in place_matching_rules:
+        if rule.matches(osm_tags):
+            matched_types.append(type_strings)
+
+    feature_types_list = leave_longest_types(matched_types)
+    feature_types = convert_list_to_feature_types(feature_types_list)
+
+    log.debug(f"Identified feature-types: {feature_types}")
+
+    return feature_types
+
+def get_place_icon(place_data, bookmark_icon_file=PATH_BOOKMARK_ICONS):
+    """
+    Find the matching icon name for a place based on its OSM tags
+    and the bookmark icon YAML mapping.
+
+    Returns:
+        str, list | None, None  (e.g. "Bar", "Building", ...)
+    """
+    global data_place_icons
+
+    if data_place_icons is None:
+        bookmark_icon_file = Path(bookmark_icon_file)
+
+        if not bookmark_icon_file.exists():
+            raise FileNotFoundError(bookmark_icon_file)
+
+        with bookmark_icon_file.open("r", encoding="utf-8") as f:
+            icon_map = yaml.safe_load(f) or {}
 
     tags = place_data.get("original_tags", {})
     if not isinstance(tags, dict):
@@ -468,7 +523,8 @@ def process_places_to_kml(
                 continue
 
             # determine icon for best match
-            icon_name = find_icon_name(best_match)
+            icon_name = get_place_icon(best_match)
+            feature_types = get_place_features(best_match)
 
             score = best_match.get("final_score", 0.0)
             scores.append(score)
@@ -479,7 +535,8 @@ def process_places_to_kml(
 
             successful += 1
 
-            write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc, icon_name=icon_name)
+            write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc,
+                         icon_name=icon_name, feature_types=feature_types)
 
         except Exception as e:
             skipped += 1
