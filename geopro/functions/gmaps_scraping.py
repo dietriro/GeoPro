@@ -17,6 +17,7 @@ import logging
 import requests
 import simplekml
 
+from geopro.config import PATH_CHROME
 from geopro.log import setup_add_logger
 
 log = logging.getLogger("geopro")
@@ -113,7 +114,7 @@ def convert_geojson_to_kml(geojson_data):
 def init_webdriver(run_headless):
     # Setup Selenium Chrome driver
     options = webdriver.ChromeOptions()
-    options.add_argument('user-data-dir=/home/robin/Code/misc/chrome')
+    options.add_argument(f'user-data-dir={PATH_CHROME}')
     if run_headless:
         options.add_argument('--headless')
     driver = webdriver.Chrome(options=options, service=Service(ChromeDriverManager().install()))
