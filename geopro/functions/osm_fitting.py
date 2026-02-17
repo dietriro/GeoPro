@@ -7,6 +7,8 @@ import json
 import random
 import time
 import yaml
+import urllib3
+
 from pathlib import Path
 from typing import Callable
 from pykml.factory import KML_ElementMaker as KML
@@ -23,6 +25,7 @@ NAME_WEIGHT = 0.7
 DIST_WEIGHT = 0.3
 RADIUS = 1000
 TIMEOUT = 100
+ALLOW_SELF_SIGNED_CERT = False
 
 MWM_NS = "https://comaps.app"  # The namespace for mwm
 NSMAP = {"mwm": MWM_NS}
@@ -35,6 +38,9 @@ OVERPASS_ENDPOINTS = [
 
 place_matching_rules = None
 data_place_icons = None
+
+if ALLOW_SELF_SIGNED_CERT:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class MatchingMethods:
@@ -64,6 +70,7 @@ def overpass_request(
                 data=query,
                 timeout=timeout,
                 headers={"Accept": "application/json"},
+                verify=not ALLOW_SELF_SIGNED_CERT
             )
 
             if response.status_code in (429, 504):
