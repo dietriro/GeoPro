@@ -264,7 +264,7 @@ class BaseGeoProApp(QMainWindow):
 
         self.source_type = "file" if len(files) == 1 else "files"
         self.source_files = sorted(files)
-        self.source_entry.setText(", ".join(files))
+        self.source_entry.setText(", ".join(self.source_files))
 
         self.after_source_selected()
 
@@ -297,6 +297,9 @@ class BaseGeoProApp(QMainWindow):
     def after_source_selected(self):
         self.populate_table(self.source_files)
         self.target_entry.clear()
+        if self.source_type == "file":
+            self.target_location = str(Path(self.source_files[0]).with_suffix('.kml'))
+            self.target_entry.setText(self.target_location)
         self.update_target_buttons()
         self.update_execute_button()
         self.set_running_state(RunStates.INIT)
