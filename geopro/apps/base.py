@@ -459,6 +459,10 @@ class BaseGeoProApp(QMainWindow):
         elif run_state == RunStates.USER_INPUT:
             self.running_label.setText("Waiting for user input...")
             self.set_status_animation(Animations.MATCHING)
+        elif run_state == RunStates.STOPPED:
+            self.running_label.setText("Exiting application...")
+
+        QApplication.processEvents()
 
         self.run_state = run_state
 
@@ -513,3 +517,12 @@ class BaseGeoProApp(QMainWindow):
     def execute(self):
         """Must be implemented by subclass"""
         raise NotImplementedError
+
+    def closeEvent(self, event):
+        # Called when the user closes the window
+
+        log.info("Waiting for worker thread to stop...")
+        if self.thread_execution is not None:
+            self.thread_execution.join()
+        log.info("Worker thread stopped. Exiting program now.")
+        event.accept()  # accept the close

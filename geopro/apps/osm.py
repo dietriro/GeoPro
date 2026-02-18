@@ -10,11 +10,10 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QHBoxLayout, QWidget, QVBoxLayout, QTableWidget, \
     QTableWidgetItem, QPushButton, QMessageBox, QHeaderView, QToolButton
 
-from geopro.functions.osm_fitting import process_places_to_kml, MatchingMethods
-# from geopro.functions.osm_fitting import OSMFittingWorker
+from geopro.functions.osm_fitting import MatchingMethods, OSMMatcher
 from geopro.apps.base import BaseGeoProApp
 from geopro.core import FileTypeConfig, RunStates, EmitterOSM
-from geopro.config import Icons, RANGES, Zoom
+from geopro.config import Icons, RANGES, Commands
 from geopro.ui.widgets import IconTextButton
 
 log = logging.getLogger("geopro")
@@ -45,6 +44,9 @@ class OSMGeoProApp(BaseGeoProApp):
         self.emitter.user_match_selection.connect(self.user_match_selection)
         self.emitter.set_processing_result.connect(self.set_processing_result)
         self.emitter.reset_matching.connect(self.reset_matching)
+
+        self.osm_matcher = OSMMatcher(update_function=self.emitter.set_processing_result.emit,
+                                      user_match_selection=self.trigger_user_match_selection)
 
         self.match_selection_loop = None
         self.selected_match = None
@@ -169,7 +171,7 @@ class OSMGeoProApp(BaseGeoProApp):
 
         self.button_decrease_range = QPushButton("+")
         self.button_decrease_range.setFixedSize(24, 24)  # button size matches icon nicely
-        self.button_decrease_range.clicked.connect(lambda: self.on_button_range(Zoom.IN))
+        self.button_decrease_range.clicked.connect(lambda: self.on_button_range(Commands.ZOOM_IN))
 
         self.label_range = QLabel("")
         self.label_range.setFixedSize(72, 24)
@@ -178,7 +180,7 @@ class OSMGeoProApp(BaseGeoProApp):
 
         self.button_increase_range = QPushButton("-")
         self.button_increase_range.setFixedSize(24, 24)  # button size matches icon nicely
-        self.button_increase_range.clicked.connect(lambda: self.on_button_range(Zoom.OUT))
+        self.button_increase_range.clicked.connect(lambda: self.on_button_range(Commands.ZOOM_OUT))
 
         self.label_matching_name.setStyleSheet("padding-left: 5px;padding-right: 20px;")
         # self.label_matching_name.setStyleSheet("background-color: #FFFFFF;padding-left: 5px;padding-right: 20px;")
@@ -335,6 +337,9 @@ class OSMGeoProApp(BaseGeoProApp):
             self.button_increase_range.setEnabled(True)
 
     def trigger_user_match_selection(self, name_org, lat_org, lon_org, matches, range):
+        if self.osm_matcher.stop_requested:
+            return Commands.EXIT
+
         self.emitter.user_match_selection.emit(name_org, lat_org, lon_org, matches, range)
 
         # block function until selection is made
@@ -659,16 +664,28 @@ class OSMGeoProApp(BaseGeoProApp):
 
             log.info(f"Matching method: {self.matching_method}")
 
-            process_places_to_kml(input_file_path=input_file_path,
+            self.osm_matcher.process_places_to_kml(input_file_path=input_file_path,
                                   output_file_path=output_file_path,
                                   overwrite_output=self.overwrite_target,
-                                  update_function=self.emitter.set_processing_result.emit,
-                                  user_match_selection=self.trigger_user_match_selection,
                                   match_method=self.matching_method,
                                   threshold=threshold)
 
         self.emitter.status.emit(RunStates.FINISHED)
 
+    def closeEvent(self, event):
+        self.set_running_state(RunStates.STOPPED)
+
+        # tell matcher to stop on next loop
+        self.osm_matcher.stop_requested = True
+
+        # in case the worker thread is currently waiting for input, return exit request
+        if self.match_selection_loop is not None:
+            self.selected_match = Commands.EXIT
+            self.match_selection_loop.quit()
+            self.match_selection_loop = None
+
+        # call parent to wait for thread to stop
+        super().closeEvent(event)
 
 
 if __name__ == "__main__":

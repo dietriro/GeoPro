@@ -42,3 +42,4 @@ class RunStates:
     RUNNING = "running"
     FINISHED = "finished"
     USER_INPUT = "user_input"
+    STOPPED = "stopped"
