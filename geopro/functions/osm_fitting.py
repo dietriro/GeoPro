@@ -14,7 +14,7 @@ from typing import Callable
 from pykml.factory import KML_ElementMaker as KML
 from lxml import etree
 
-from geopro.config import PATH_BOOKMARK_ICONS, PATH_PLACE_MAPPING
+from geopro.config import PATH_BOOKMARK_ICONS, PATH_PLACE_MAPPING, RANGES, DEFAULT_RADIUS, Zoom
 from geopro.functions.places_feature_matching import parse_mapcss, leave_longest_types, OsmTag, \
     convert_list_to_feature_types
 
@@ -23,7 +23,7 @@ log.setLevel(logging.DEBUG)
 
 NAME_WEIGHT = 0.7
 DIST_WEIGHT = 0.3
-RADIUS = 1000
+RADIUS = RANGES[3]
 TIMEOUT = 100
 ALLOW_SELF_SIGNED_CERT = False
 
@@ -49,6 +49,10 @@ class MatchingMethods:
     THRESHOLD = "threshold"
 
 
+class DuplicateError(Exception):
+    pass
+
+
 def extract_words(place_name: str) -> list:
     """
     Extract words from a place name while preserving internal apostrophes.
@@ -56,11 +60,7 @@ def extract_words(place_name: str) -> list:
     return re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", place_name)
 
 
-def overpass_request(
-    query: str,
-    timeout: int = 30,
-    max_retries: int = 5,
-):
+def overpass_request(query: str, timeout: int = 30, max_retries: int = 5):
     for attempt in range(1, max_retries + 1):
         url = random.choice(OVERPASS_ENDPOINTS)
 
@@ -81,10 +81,19 @@ def overpass_request(
             response.raise_for_status()
 
             if "application/json" not in response.headers.get("Content-Type", ""):
-                raise ValueError("Non-JSON Overpass response")
+                if "duplicate_query" in response.text:
+                    raise DuplicateError("Duplicate query")
+                else:
+                    raise ValueError("Non-JSON Overpass response")
 
             return response.json()
 
+        except DuplicateError as e:
+            log.warning(
+                f"Overpass failed (attempt {attempt}/{max_retries}): {e}. "
+                f"Not retrying because of duplicate query."
+            )
+            break
         except Exception as e:
             wait = min(2 ** attempt, 30)
             log.warning(
@@ -376,16 +385,42 @@ def get_place_icon(place_data, bookmark_icon_file=PATH_BOOKMARK_ICONS):
 
     return None
 
+def set_radius_from_string(input_str):
+    global RADIUS
+
+    try:
+        if input_str == Zoom.OUT:
+            new_index = RANGES.index(RADIUS) + 1
+            if new_index >= len(RANGES):
+                log.warning(f"Selected range not valid. Using default range: {DEFAULT_RADIUS}")
+                RADIUS = DEFAULT_RADIUS
+            RADIUS = RANGES[new_index]
+        elif input_str == Zoom.IN:
+            new_index = RANGES.index(RADIUS) - 1
+            if new_index < 0:
+                log.warning(f"Selected range not valid. Using default range: {DEFAULT_RADIUS}")
+                RADIUS = DEFAULT_RADIUS
+            RADIUS = RANGES[new_index]
+        else:
+            log.warning(f"Unknown return value for result. Using default range: {DEFAULT_RADIUS}")
+            RADIUS = DEFAULT_RADIUS
+    except IndexError as e:
+        log.debug(e)
+        log.warning(f"Invalid range selection. Using default range: {DEFAULT_RADIUS}")
+        RADIUS = DEFAULT_RADIUS
+
 def process_places_to_kml(
         input_file_path: str,
         output_file_path: str,
         overwrite_output: bool,
         update_function: Callable[[str, int, int], None],
-        user_match_selection: Callable[[str, float, float, list], None],
+        user_match_selection: Callable[[str, float, float, list, int], None],
         match_method: str = MatchingMethods.BEST,
         threshold: float = None,
         include_skipped: bool = True
 ):
+    global RADIUS
+
     successful = 0
     skipped = 0
     scores = []
@@ -447,103 +482,151 @@ def process_places_to_kml(
             place_name = properties.get("name", "Unknown")
             place_desc = properties.get("description", "")
 
-            log.info(f"[{idx}/{len(features)}] Matching place: {place_name}")
-            log.debug(f"Source Data: {lat, lon, RADIUS, place_name}")
+            match_successful = False
 
-            # ---- correct call ----
-            candidates = search_places_around(
-                lat=lat,
-                lon=lon,
-                radius=RADIUS,
-                place_name=place_name,
-                place_type="node"
-            )
+            while not match_successful:
+                log.info(f"[{idx}/{len(features)}] Matching place: {place_name}")
+                log.debug(f"Source Data: {lat, lon, RADIUS, place_name}")
 
-            log.debug(f"Candidates: {candidates}")
+                # ---- correct call ----
+                candidates = search_places_around(
+                    lat=lat,
+                    lon=lon,
+                    radius=RADIUS,
+                    place_name=place_name,
+                    place_type="node"
+                )
 
-            if not candidates:
-                skipped += 1
-                log.warning(f"No OSM candidates found for '{place_name}'")
-                write_to_kml(kml_obj, place_name, lat, lon, place_desc)
-                update_function(input_file_path, successful, skipped)
-                continue
+                log.debug(f"Candidates: {candidates}")
 
-            # ---- correct call & return handling ----
-            ranked_matches = find_best_place_match(
-                places=candidates,
-                target_lat=lat,
-                target_lon=lon,
-                target_name=place_name,
-            )
+                if not candidates:
+                    log.warning(f"No OSM candidates found for '{place_name}'")
+                    if match_method == MatchingMethods.BEST:
+                        skipped += 1
+                        write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                        update_function(input_file_path, successful, skipped)
+                        break
+                    else:
+                        selection = user_match_selection(place_name, lat, lon, list(), RADIUS)
+                        if type(selection) is str:
+                            # new radius was chosen
+                            set_radius_from_string(selection)
+                            continue
+                        elif type(selection) is int and selection == -1:
+                            # original place was selected
+                            log.debug("Matching: User selected original location.")
+                            successful += 1
+                        else:
+                            log.warning(f"Selection made by user is not valid: '{selection}'. "
+                                        f"Falling back to original location.")
+                            skipped += 1
+                        write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                        update_function(input_file_path, successful, skipped)
+                        break
 
-            if not ranked_matches:
-                skipped += 1
-                log.warning(f"No suitable OSM match for '{place_name}'")
-                write_to_kml(kml_obj, place_name, lat, lon, place_desc)
-                update_function(input_file_path, successful, skipped)
-                continue
 
-            if match_method == MatchingMethods.BEST:
-                best_match = ranked_matches[0]
-            elif match_method == MatchingMethods.THRESHOLD:
-                if threshold is None:
+                # ---- correct call & return handling ----
+                ranked_matches = find_best_place_match(
+                    places=candidates,
+                    target_lat=lat,
+                    target_lon=lon,
+                    target_name=place_name,
+                )
+
+                if not ranked_matches:
                     skipped += 1
                     log.warning(f"No suitable OSM match for '{place_name}'")
                     write_to_kml(kml_obj, place_name, lat, lon, place_desc)
                     update_function(input_file_path, successful, skipped)
-                    continue
+                    break
 
-                score = ranked_matches[0].get("final_score", 0.0)
-                if score >= threshold:
+                if match_method == MatchingMethods.BEST:
                     best_match = ranked_matches[0]
-                    log.debug(f"Best match score is above threshold: {score} >= {threshold}. Using best match.")
-                else:
-                    log.debug(f"Best match score is below threshold: {score} < {threshold}. Requiring user input.")
-                    selection = user_match_selection(place_name, lat, lon, ranked_matches)
-                    if selection == -1:
-                        # original location selected
-                        log.debug("Matching: User selected original location.")
-                        successful += 1
+                elif match_method == MatchingMethods.THRESHOLD:
+                    if threshold is None:
+                        skipped += 1
+                        log.warning(f"No suitable OSM match for '{place_name}'")
                         write_to_kml(kml_obj, place_name, lat, lon, place_desc)
                         update_function(input_file_path, successful, skipped)
+                        break
+
+                    score = ranked_matches[0].get("final_score", 0.0)
+                    if score >= threshold:
+                        best_match = ranked_matches[0]
+                        log.debug(f"Best match score is above threshold: {score} >= {threshold}. Using best match.")
+                    else:
+                        log.debug(f"Best match score is below threshold: {score} < {threshold}. Requiring user input.")
+                        selection = user_match_selection(place_name, lat, lon, ranked_matches, RADIUS)
+                        log.debug(f"User selection: {selection}")
+                        if type(selection) is str:
+                            # new radius was chosen
+                            set_radius_from_string(selection)
+                            continue
+                        elif type(selection) is int and selection >= 0:
+                            pass
+                        else:
+                            if type(selection) is int and selection == -1:
+                                # original place was selected
+                                log.debug("Matching: User selected original location.")
+                                successful += 1
+                            else:
+                                log.warning(f"Selection made by user is not valid: '{selection}'. "
+                                            f"Falling back to original location.")
+                                skipped += 1
+                            write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                            update_function(input_file_path, successful, skipped)
+                            break
+
+                        best_match = ranked_matches[selection]
+
+                        log.info(f"User selection: {selection}")
+                elif match_method == MatchingMethods.ALL:
+                    # test waiting for button input
+                    selection = user_match_selection(place_name, lat, lon, ranked_matches, RADIUS)
+                    log.debug(f"User selection: {selection}")
+                    if type(selection) is str:
+                        # new radius was chosen
+                        set_radius_from_string(selection)
                         continue
+                    elif type(selection) is int and selection >= 0:
+                        pass
+                    else:
+                        if type(selection) is int and selection == -1:
+                            # original place was selected
+                            log.debug("Matching: User selected original location.")
+                            successful += 1
+                        else:
+                            log.warning(f"Selection made by user is not valid: '{selection}'. "
+                                        f"Falling back to original location.")
+                            skipped += 1
+                        write_to_kml(kml_obj, place_name, lat, lon, place_desc)
+                        update_function(input_file_path, successful, skipped)
+                        break
+
                     best_match = ranked_matches[selection]
 
                     log.info(f"User selection: {selection}")
-            elif match_method == MatchingMethods.ALL:
-                # test waiting for button input
-                selection = user_match_selection(place_name, lat, lon, ranked_matches)
-                log.info(f"User selection: {selection}")
-                if selection == -1:
-                    # original location selected
-                    log.debug("Matching: User selected original location.")
-                    successful += 1
-                    write_to_kml(kml_obj, place_name, lat, lon, place_desc)
-                    update_function(input_file_path, successful, skipped)
-                    continue
+                else:
+                    log.error(f"Match method not supported: {match_method}")
+                    break
 
-                best_match = ranked_matches[selection]
+                # determine icon for best match
+                icon_name = get_place_icon(best_match)
+                feature_types = get_place_features(best_match)
 
-                log.info(f"User selection: {selection}")
-            else:
-                log.error(f"Match method not supported: {match_method}")
-                continue
+                score = best_match.get("final_score", 0.0)
+                scores.append(score)
 
-            # determine icon for best match
-            icon_name = get_place_icon(best_match)
-            feature_types = get_place_features(best_match)
+                osm_lat = best_match["lat"]
+                osm_lon = best_match["lon"]
+                osm_name = best_match.get("name", place_name)
 
-            score = best_match.get("final_score", 0.0)
-            scores.append(score)
+                successful += 1
 
-            osm_lat = best_match["lat"]
-            osm_lon = best_match["lon"]
-            osm_name = best_match.get("name", place_name)
+                write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc,
+                             icon_name=icon_name, feature_types=feature_types)
 
-            successful += 1
-
-            write_to_kml(kml_obj, osm_name, osm_lat, osm_lon, place_desc,
-                         icon_name=icon_name, feature_types=feature_types)
+                match_successful = True
 
         except Exception as e:
             skipped += 1

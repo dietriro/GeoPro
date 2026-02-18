@@ -33,7 +33,7 @@ class EmitterGMaps(Emitter):
     pass
 
 class EmitterOSM(Emitter):
-    user_match_selection = pyqtSignal(str, float, float, list)
+    user_match_selection = pyqtSignal(str, float, float, list, int)
     reset_matching = pyqtSignal()
 
 

@@ -14,7 +14,7 @@ from geopro.functions.osm_fitting import process_places_to_kml, MatchingMethods
 # from geopro.functions.osm_fitting import OSMFittingWorker
 from geopro.apps.base import BaseGeoProApp
 from geopro.core import FileTypeConfig, RunStates, EmitterOSM
-from geopro.config import Icons
+from geopro.config import Icons, RANGES, Zoom
 from geopro.ui.widgets import IconTextButton
 
 log = logging.getLogger("geopro")
@@ -167,11 +167,27 @@ class OSMGeoProApp(BaseGeoProApp):
         self.button_trigger_original.setFixedSize(24, 24)  # button size matches icon nicely
         self.button_trigger_original.clicked.connect(self.on_button_org_trigger)
 
+        self.button_decrease_range = QPushButton("+")
+        self.button_decrease_range.setFixedSize(24, 24)  # button size matches icon nicely
+        self.button_decrease_range.clicked.connect(lambda: self.on_button_range(Zoom.IN))
+
+        self.label_range = QLabel("")
+        self.label_range.setFixedSize(72, 24)
+        self.label_range.setAlignment(Qt.AlignCenter)
+        self.label_range.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
+        self.button_increase_range = QPushButton("-")
+        self.button_increase_range.setFixedSize(24, 24)  # button size matches icon nicely
+        self.button_increase_range.clicked.connect(lambda: self.on_button_range(Zoom.OUT))
+
         self.label_matching_name.setStyleSheet("padding-left: 5px;padding-right: 20px;")
         # self.label_matching_name.setStyleSheet("background-color: #FFFFFF;padding-left: 5px;padding-right: 20px;")
 
         self.layout_match_original.addWidget(self.button_trigger_original)
         self.layout_match_original.addWidget(self.label_matching_name)
+        self.layout_match_original.addWidget(self.button_decrease_range)
+        self.layout_match_original.addWidget(self.label_range)
+        self.layout_match_original.addWidget(self.button_increase_range)
 
     def init_ui_matching_table(self):
         self.matches_container = QWidget()
@@ -257,6 +273,13 @@ class OSMGeoProApp(BaseGeoProApp):
 
         log.debug(f"User triggered original marker")
 
+    def on_button_range(self, direction):
+        self.selected_match = direction
+
+        if self.match_selection_loop is not None:
+            self.match_selection_loop.quit()
+            self.match_selection_loop = None
+
     def on_click_table(self):
         """
         Update selected_match when the user selects a row in the matches table.
@@ -285,7 +308,7 @@ class OSMGeoProApp(BaseGeoProApp):
 
         log.debug(f"User selected match row: {self.selected_match}")
 
-    def user_match_selection(self, name_org, lat_org, lon_org, matches):
+    def user_match_selection(self, name_org, lat_org, lon_org, matches, range):
         # update animation
         self.set_running_state(RunStates.USER_INPUT)
 
@@ -298,14 +321,21 @@ class OSMGeoProApp(BaseGeoProApp):
         # update table
         self.update_matches_table(matches)
 
+        # update range label
+        self.label_range.setText(str(range))
+
         # reset selected match and enable button
         self.selected_match = None
         self.matches_select_button.setEnabled(True)
         self.org_loc_select_button.setEnabled(True)
         self.button_trigger_original.setEnabled(True)
+        if RANGES.index(range) > 0:
+            self.button_decrease_range.setEnabled(True)
+        if RANGES.index(range) < len(RANGES) - 1:
+            self.button_increase_range.setEnabled(True)
 
-    def trigger_user_match_selection(self, name_org, lat_org, lon_org, matches):
-        self.emitter.user_match_selection.emit(name_org, lat_org, lon_org, matches)
+    def trigger_user_match_selection(self, name_org, lat_org, lon_org, matches, range):
+        self.emitter.user_match_selection.emit(name_org, lat_org, lon_org, matches, range)
 
         # block function until selection is made
         self.match_selection_loop = QEventLoop()
@@ -591,6 +621,8 @@ class OSMGeoProApp(BaseGeoProApp):
         self.matches_select_button.setEnabled(False)
         self.org_loc_select_button.setEnabled(False)
         self.button_trigger_original.setEnabled(False)
+        self.button_decrease_range.setEnabled(False)
+        self.button_increase_range.setEnabled(False)
 
         self.matches_table.setRowCount(0)
         self.map_view.setHtml("")

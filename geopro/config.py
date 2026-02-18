@@ -13,6 +13,9 @@ PATH_BOOKMARK_ICONS = os.path.join(PATH_RESOURCES, "bookmark_icons.yaml")
 PATH_PLACE_MAPPING = os.path.join(PATH_RESOURCES, "mapcss-mapping.csv")
 PATH_CHROME = os.path.join(package_path, "chrome")
 
+RANGES = [10, 30, 100, 1000, 5000]
+DEFAULT_RADIUS = 10
+
 @dataclass(frozen=True)
 class Animations:
     COMPLETED = "completed"
@@ -40,6 +43,12 @@ class Icons:
 class Themes:
     DARK = "dark"
     LIGHT = "light"
+
+
+@dataclass(frozen=True)
+class Zoom:
+    IN = "zoom-in"
+    OUT = "zoom-out"
 
 
 class ColorRole(Enum):
