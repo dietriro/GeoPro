@@ -5,26 +5,27 @@ import logging
 from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox,QHBoxLayout
 
 
-from geopro.functions.gmaps_scraping import scrape_from_file, SupportedMethods
-from geopro.apps.base import BaseGeoProApp
+from geopro.functions.gmaps_scraping import SupportedMethods, GMapsScraper
+from geopro.apps.base import BaseGeoProApp, RunStates
 from geopro.core import FileTypeConfig, EmitterGMaps
 
 log = logging.getLogger("geopro")
-
-
-class RunStates:
-    INIT = "initialized"
-    RUNNING = "running"
-    FINISHED = "finished"
+log.setLevel(logging.DEBUG)
 
 
 class GMapsGeoProApp(BaseGeoProApp):
     WINDOW_TITLE = "GeoPro - GMaps-Scraper"
     INPUT_FILE_TYPES = [FileTypeConfig.CSV]
-    OUTPUT_FILE_TYPES = [FileTypeConfig.JSON, FileTypeConfig.GEOJSON]
+    OUTPUT_FILE_TYPES = [FileTypeConfig.GEOJSON, FileTypeConfig.JSON]
 
     def __init__(self):
         super().__init__()
+
+        self.emitter = EmitterGMaps()
+        self.emitter.status.connect(self.set_running_state)
+        self.emitter.set_processing_result.connect(self.set_processing_result)
+
+        self.gmaps_scraper = GMapsScraper(update_function=self.emitter.set_processing_result.emit)
 
         self.init_ui_source_selection()
         self.init_ui_target_selection()
@@ -40,9 +41,7 @@ class GMapsGeoProApp(BaseGeoProApp):
 
         self.init_ui_status_bar()
 
-        self.emitter = EmitterGMaps()
-        self.emitter.status.connect(self.set_running_state)
-        self.emitter.set_processing_result.connect(self.set_processing_result)
+
 
         self.init_finish()
 
@@ -139,17 +138,23 @@ class GMapsGeoProApp(BaseGeoProApp):
                 output_file_path = os.path.join(self.target_location, target_file_name)
             else:
                 output_file_path = self.target_location
-            scrape_from_file(input_file=input_file_path,
-                             output_file=output_file_path,
-                             overwrite_output=self.overwrite_target,
-                             update_function=self.emitter.set_processing_result.emit,
-                             run_headless=self.run_headless,
-                             scraping_method=self.scraping_method,
-                             api_key=self.api_entry.text())
+            self.gmaps_scraper.scrape_from_file(input_file=input_file_path,
+                                                output_file=output_file_path,
+                                                overwrite_output=self.overwrite_target,
+                                                run_headless=self.run_headless,
+                                                scraping_method=self.scraping_method,
+                                                api_key=self.api_entry.text())
 
         self.emitter.status.emit(RunStates.FINISHED)
 
+    def closeEvent(self, event):
+        self.set_running_state(RunStates.STOPPED)
 
+        # tell matcher to stop on next loop
+        self.gmaps_scraper.stop_requested = True
+
+        # call parent to wait for thread to stop
+        super().closeEvent(event)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

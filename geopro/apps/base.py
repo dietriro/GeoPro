@@ -298,7 +298,7 @@ class BaseGeoProApp(QMainWindow):
         self.populate_table(self.source_files)
         self.target_entry.clear()
         if self.source_type == "file":
-            self.target_location = str(Path(self.source_files[0]).with_suffix('.kml'))
+            self.target_location = str(Path(self.source_files[0]).with_suffix(self.OUTPUT_FILE_TYPES[0].extensions[0]))
             self.target_entry.setText(self.target_location)
         self.update_target_buttons()
         self.update_execute_button()
