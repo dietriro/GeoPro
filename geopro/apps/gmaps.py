@@ -52,9 +52,9 @@ class GMapsGeoProApp(BaseGeoProApp):
         super().init_finish()
 
         # disable splitter as the right side is currently not needed
-        self.splitter.widget(1).hide()
-        self.splitter.handle(1).setEnabled(False)
-        self.splitter.setSizes([1, 0])
+        self.splitter_horizontal.widget(1).hide()
+        self.splitter_horizontal.handle(1).setEnabled(False)
+        self.splitter_horizontal.setSizes([1, 0])
 
     def init_ui_method_selection(self):
         method_layout = QHBoxLayout()

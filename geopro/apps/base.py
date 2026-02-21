@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 
@@ -15,13 +16,13 @@ import qdarktheme
 
 from geopro.core import FileTypeConfig, RunStates
 from geopro.config import package_path, Animations, RunningConfig, Themes, AnimationStates, ColorRole, Colors
-from geopro.log import setup_logging
+from geopro.log import setup_logging, QLogger
 
-log = setup_logging()
+log = setup_logging("geopro")
 
 
 
-class BaseGeoProApp(QMainWindow):
+class BaseGeoProApp(QMainWindow, QLogger):
     """
     Fully reusable base class for file-based scraping apps.
     No scraper-specific logic lives here.
@@ -58,6 +59,7 @@ class BaseGeoProApp(QMainWindow):
         self.row_colors = None
 
         self._init_window()
+        self.init_ui_logging(log, logging.INFO)
         self.init_ui_base()
 
 
@@ -92,13 +94,20 @@ class BaseGeoProApp(QMainWindow):
         self.right_panel = QWidget()
         self.right_layout = QVBoxLayout(self.right_panel)
 
-        # splitter
-        self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.addWidget(self.left_panel)
-        self.splitter.addWidget(self.right_panel)
-        self.splitter.setSizes([600,500])
+        # splitter - horizontal
+        self.splitter_horizontal = QSplitter(Qt.Horizontal)
+        self.splitter_horizontal.addWidget(self.left_panel)
+        self.splitter_horizontal.addWidget(self.right_panel)
+        self.splitter_horizontal.setSizes([600, 500])
 
-        self.main_layout.addWidget(self.splitter)
+        # splitter - vertical
+        self.splitter_vertical = QSplitter(Qt.Vertical)
+        self.splitter_vertical.setHandleWidth(4)  # default is usually ~5–9 depending on OS
+        self.splitter_vertical.addWidget(self.splitter_horizontal)
+        self.splitter_vertical.addWidget(self.textbox_log)
+        self.splitter_vertical.setSizes([600, 100])
+
+        self.main_layout.addWidget(self.splitter_vertical)
 
     def init_ui_source_selection(self):
         self.source_label = QLabel("Select Source:")
@@ -180,6 +189,14 @@ class BaseGeoProApp(QMainWindow):
         self.left_layout.addWidget(self.output_table)
 
     def init_ui_execution_controls(self):
+        self.execute_button = QPushButton("Run")
+        self.execute_button.setEnabled(False)
+        self.execute_button.clicked.connect(self.on_button_execute)
+
+        self.left_layout.addWidget(self.execute_button)
+
+    def init_ui_status_bar(self):
+        """Create and configure the status bar."""
         # Create a QLabel to display the GIF
         self.gif_label = QLabel()
         self.gif_label.setFixedSize(32, 32)
@@ -192,31 +209,30 @@ class BaseGeoProApp(QMainWindow):
         self.gif_status.finished.connect(self.on_gif_finished)
         self.gif_label.setMovie(self.gif_status)
 
+        # Create a status text label
         self.running_label = QLabel("")
         self.running_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.running_label.setStyleSheet("padding-left: 20px;padding-right: 20px;")
 
-        self.execute_button = QPushButton("Run")
-        self.execute_button.setEnabled(False)
-        self.execute_button.clicked.connect(self.on_button_execute)
-
-        self.left_layout.addWidget(self.execute_button)
-
-
-    def init_ui_status_bar(self):
-        """Create and configure the status bar."""
-
-        # --- Create and attach the status bar ---
-        self.status_bar = QStatusBar(self)
-        self.setStatusBar(self.status_bar)
-
-        self.status_bar.addWidget(self.gif_label)
-        self.status_bar.addWidget(self.running_label)
+        # --- Theme switch (right side / permanent widget) ---
+        self.switch_gui_log = QCheckBox("Show log")
+        self.switch_gui_log.setChecked(False)
+        self.switch_gui_log.stateChanged.connect(lambda: self.textbox_log.setVisible(self.switch_gui_log.isChecked()))
+        self.textbox_log.setVisible(False)
 
         # --- Theme switch (right side / permanent widget) ---
         self.theme_switch = QCheckBox("Dark mode")
         self.theme_switch.setChecked(False)
         self.theme_switch.stateChanged.connect(self.on_theme_switch_changed)
+
+        # --- Create and attach the status bar ---
+        self.status_bar = QStatusBar(self)
+        self.setStatusBar(self.status_bar)
+
+        # Add widgets to status bar
+        self.status_bar.addWidget(self.gif_label)
+        self.status_bar.addWidget(self.running_label)
+        self.status_bar.addPermanentWidget(self.switch_gui_log)
         self.status_bar.addPermanentWidget(self.theme_switch)
 
     def on_theme_switch_changed(self, state: int):
