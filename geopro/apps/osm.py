@@ -187,9 +187,9 @@ class OSMGeoProApp(BaseGeoProApp):
 
         self.layout_match_original.addWidget(self.button_trigger_original)
         self.layout_match_original.addWidget(self.label_matching_name)
-        self.layout_match_original.addWidget(self.button_decrease_range)
-        self.layout_match_original.addWidget(self.label_range)
         self.layout_match_original.addWidget(self.button_increase_range)
+        self.layout_match_original.addWidget(self.label_range)
+        self.layout_match_original.addWidget(self.button_decrease_range)
 
     def init_ui_matching_table(self):
         self.matches_container = QWidget()

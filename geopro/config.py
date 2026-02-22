@@ -1,7 +1,7 @@
 import os
 import logging
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, auto
 
 import geopro
 
@@ -78,3 +78,9 @@ class RunningConfig:
     theme = Themes.DARK
     animation = None
     animation_state = None
+
+class UserSelection(Enum):
+    NEW_RADIUS = auto()
+    VALID_ITEM = auto()
+    OTHER_ITEM = auto()
+    EXIT = auto()
