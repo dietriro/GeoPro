@@ -14,7 +14,7 @@ PATH_PLACE_MAPPING = os.path.join(PATH_RESOURCES, "mapcss-mapping.csv")
 PATH_CHROME = os.path.join(package_path, "chrome")
 
 RANGES = [10, 30, 100, 1000, 5000]
-DEFAULT_RANGE = 10
+DEFAULT_RANGE = RANGES[2]
 
 @dataclass(frozen=True)
 class Animations:

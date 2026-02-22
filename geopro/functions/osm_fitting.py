@@ -457,7 +457,7 @@ class OSMMatcher:
         if type(selection) is str:
             # new radius was chosen
             if not self.set_radius_from_string(selection):
-                return UserSelection.EXIT
+                return UserSelection.EXIT, selection
             return UserSelection.NEW_RADIUS, selection
         elif type(selection) is int and selection >= 0:
             return UserSelection.VALID_ITEM, selection

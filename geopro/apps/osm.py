@@ -8,7 +8,7 @@ from PyQt5.QtGui import QPixmap, QPainter, QPolygon, QColor, QFont, QIcon
 from PyQt5.QtWebChannel import QWebChannel
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWidgets import QApplication, QLabel, QLineEdit, QComboBox, QHBoxLayout, QWidget, QVBoxLayout, QTableWidget, \
-    QTableWidgetItem, QPushButton, QMessageBox, QHeaderView, QToolButton
+    QTableWidgetItem, QPushButton, QMessageBox, QHeaderView, QTreeWidgetItem, QTreeWidget
 
 from geopro.functions.osm_fitting import MatchingMethods, OSMMatcher
 from geopro.apps.base import BaseGeoProApp
@@ -30,6 +30,72 @@ class MapBridge(QObject):
         self.markerClicked.emit(index)
 
 
+class OSMDataViewer(QWidget):
+    def __init__(self, data: dict, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("OSM Element Viewer")
+        self.resize(600, 400)
+
+        layout = QVBoxLayout(self)
+
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(2)
+        self.tree.setHeaderLabels(["Key", "Value"])
+        # self.tree.header().setStretchLastSection(True)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+
+        layout.addWidget(self.tree)
+
+        self.populate_tree(data)
+        self.tree.expandToDepth(0)  # expand first level
+
+    def populate_tree(self, data):
+        self.tree.clear()
+        root = self.tree.invisibleRootItem()
+
+        # If root is a list with a single element → unwrap it
+        if isinstance(data, list) and len(data) == 1:
+            self._add_items(root, data[0])
+        else:
+            self._add_items(root, data)
+
+    def _add_items(self, parent_item, value):
+        """
+        Recursively populate a QTreeWidgetItem from a dict or list.
+        Simple values are shown in column 2 of the same row.
+        """
+
+        # If the root itself is a dict
+        if isinstance(value, dict):
+            for key, val in value.items():
+                item = QTreeWidgetItem(parent_item)
+                item.setText(0, str(key))
+
+                if isinstance(val, (dict, list)):
+                    # Complex type → recurse
+                    self._add_items(item, val)
+                else:
+                    # Simple value → display in column 2
+                    item.setText(1, str(val))
+
+        # If the root itself is a list
+        elif isinstance(value, list):
+            for index, val in enumerate(value):
+                item = QTreeWidgetItem(parent_item)
+                item.setText(0, f"[{index}]")
+
+                if isinstance(val, (dict, list)):
+                    self._add_items(item, val)
+                else:
+                    item.setText(1, str(val))
+
+        # If the root itself is a simple value
+        else:
+            parent_item.setText(1, str(value))
+
+
 class OSMGeoProApp(BaseGeoProApp):
     WINDOW_TITLE = "GeoPro - OSM-Place-Matcher"
     WINDOW_GEOMETRY = (1150, 850)
@@ -38,7 +104,6 @@ class OSMGeoProApp(BaseGeoProApp):
 
     def __init__(self):
         super().__init__()
-
         self.emitter = EmitterOSM()
         self.emitter.status.connect(self.set_running_state)
         self.emitter.user_match_selection.connect(self.user_match_selection)
@@ -50,6 +115,8 @@ class OSMGeoProApp(BaseGeoProApp):
 
         self.match_selection_loop = None
         self.selected_match = None
+        self.matches_data = None
+        self.extended_match_data_viewer = None
 
         self.init_ui_source_selection()
         self.init_ui_target_selection()
@@ -212,6 +279,7 @@ class OSMGeoProApp(BaseGeoProApp):
         self.matches_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.matches_table.setSelectionMode(QTableWidget.SingleSelection)
         self.matches_table.itemSelectionChanged.connect(self.on_click_table)
+        self.matches_table.itemDoubleClicked.connect(self.on_double_click_table)
 
         header = self.matches_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)
@@ -300,7 +368,24 @@ class OSMGeoProApp(BaseGeoProApp):
             f"marker_{row_index + 1}.openPopup();"
         )
 
+        if self.extended_match_data_viewer is not None:
+            self.extended_match_data_viewer.populate_tree(self.matches_data[self.selected_match])
+
         log.debug(f"User selected match row: {row_index}")
+
+    def on_double_click_table(self):
+        """
+                Update selected_match when the user selects a row in the matches table.
+                """
+        self.on_click_table()
+
+        if self.extended_match_data_viewer is None:
+            self.extended_match_data_viewer = OSMDataViewer(self.matches_data[self.selected_match])
+
+        self.extended_match_data_viewer.show()
+
+        # self.extended_match_data_viewer = OSMDataViewer(self.matches_data)
+        # self.extended_match_data_viewer.show()
 
     def on_click_map(self, selected_index):
         self.matches_table.blockSignals(True)
@@ -322,6 +407,9 @@ class OSMGeoProApp(BaseGeoProApp):
 
         # update table
         self.update_matches_table(matches)
+
+        # update list of matches data from OSM
+        self.matches_data = matches
 
         # update range label
         self.label_range.setText(str(range))
@@ -647,6 +735,9 @@ class OSMGeoProApp(BaseGeoProApp):
 
         # Runs scraping for each file
         for input_file_path in self.source_files:
+            if self.osm_matcher.stop_requested:
+                break
+
             if os.path.isdir(self.target_location):
                 target_file_name = f"{os.path.splitext(os.path.basename(input_file_path))[0]}.kml"
                 output_file_path = os.path.join(self.target_location, target_file_name)
