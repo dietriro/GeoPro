@@ -1,5 +1,8 @@
 # GeoPro - Geodata Processing
 
+![alt text](resources/geopro_app-overview.svg "GeoPro - Convert places from GMaps to open formats")
+
+
 This project attempts to provide a complete and user-friendly application for transferring all geographical data from Google Maps to an open source alternative based on OpenStreetMap, specifically CoMaps. The repository includes two different applications, both rely on an initial data extraction from Google Maps. The first application (`gmaps.py`) then scrapes additional information using either a webinterface or API access to Google and saves this in a standardized geojson file. The second application (`osm.py`) reads this data and tries to match each Google Maps location to a place in OpenStreetMap in a semi-automated way. The final result is then a KML file for each original list of places in Google Maps that can then be imported into, e.g., CoMaps or Organic Maps. There is, however, a specific focus and support target towards CoMaps, including FeatureType and Icon information integration, which is used during the CoMaps import. 
 
 
