@@ -25,8 +25,9 @@ MWM_NS = "https://comaps.app"  # The namespace for mwm
 NSMAP = {"mwm": MWM_NS}
 
 OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.lirose/api/interpreter",
+    # "https://overpass-api.de/api/interpreter",
+    # "https://overpass.kumi.systems/api/interpreter",
     # "https://overpass.nchc.org.tw/api/interpreter",
 ]
 
