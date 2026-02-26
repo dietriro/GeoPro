@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Geopro-GMaps
+Exec=geopro-gmaps
+Icon=icon_app_gmaps
+Type=Application
+Terminal=false
+Categories=Utility;

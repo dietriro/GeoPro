@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "GeoPro"
+version = "1.0.0"
+description = "User friendly Geodata Processing application for converting data from GMaps to OSM (CoMaps)"
+readme = "readme.md"
+requires-python = ">=3.8"
+
+# Dependencies are dynamically read from requirements.txt
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[project.scripts]
+geopro-gmaps = "geopro.apps.gmaps:main"
+geopro-osm = "geopro.apps.osm:main"
+
+[tool.setuptools]
+packages = ["geopro", "geopro.apps", "geopro.functions", "geopro.ui"]
+
+[tool.setuptools.package-data]
+geopro = ["*.desktop"]
+
+[tool.setuptools.data-files]
+# Install .desktop files into system applications directory
+"share/applications" = [
+    "desktop/geopro-gmaps.desktop",
+    "desktop/geopro-osm.desktop"
+]
+
+# SVG icons (Linux standard icon theme location)
+"share/icons/hicolor/scalable/apps" = [
+    "resources/icon_app_gmaps.svg",
+    "resources/icon_app_osm.svg"
+]

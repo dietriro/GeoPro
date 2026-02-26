@@ -1,3 +1,5 @@
+# The animated icons used in the applications in this repository are all based on Icons from Freepik and are available at [Flaticon](www.flaticon.com).
+
 import logging
 import os
 import threading

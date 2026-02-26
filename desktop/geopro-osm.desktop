@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Geopro-OSM
+Exec=geopro-osm
+Icon=icon_app_osm
+Type=Application
+Terminal=false
+Categories=Utility;

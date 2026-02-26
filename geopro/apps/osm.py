@@ -1,3 +1,5 @@
+# The animated icons used in the applications in this repository are all based on Icons from Freepik and are available at [Flaticon](www.flaticon.com).
+
 import sys
 import os
 import json
@@ -779,8 +781,12 @@ class OSMGeoProApp(BaseGeoProApp):
         super().closeEvent(event)
 
 
-if __name__ == "__main__":
+def main():
     app = QApplication(sys.argv)
     window = OSMGeoProApp()
     window.show()
     sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
